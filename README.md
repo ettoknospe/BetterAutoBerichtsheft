@@ -34,3 +34,12 @@ On unexpected API responses raw payloads are dumped to `data/debug/` for diagnos
 - `GET /api/weeks` — available weeks + current ISO week
 - `GET /api/weeks/2026-W29` — data for one week
 - `POST /api/scrape` — body `{"week": "2026-W29"}` (optional, default current week)
+
+## Tests
+
+```bash
+docker compose build
+docker run --rm -v "$PWD/tests":/srv/tests -v "$PWD/pytest.ini":/srv/pytest.ini \
+  --entrypoint bash berichtsheft-berichtsheft \
+  -c "pip install -q pytest==8.3.4 httpx==0.28.1 && cd /srv && pytest -q"
+```
