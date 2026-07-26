@@ -4,7 +4,7 @@
 Single-container app. Scrapes "Lehrstoff" (teaching content) from WebUntis JSON/REST API (no browser, no Playwright) and serves a small week-based viewer + auto-generates copy-paste Berichtsheft text. Runs amd64 + arm64 (Pi).
 
 ## Layout
-- `app/scraper.py` — WebUntis client. Login flow: JSON-RPC `authenticate` → session cookie + personId → `/WebUntis/api/token/new` → bearer token → JSON-RPC `getTimetable` → per-lesson REST `calendar-entry/detail` for `teachingContent`. Handles merging consecutive same-subject/same-content lessons, subject filtering, debug dumps to `data/debug/` on unexpected API shapes.
+- `app/scraper.py` — WebUntis client. Login flow: JSON-RPC `authenticate` → session cookie + personId → `/WebUntis/api/token/new` → bearer token → JSON-RPC `getTimetable` → per-lesson REST `calendar-entry/detail` for `teachingContent`. Handles merging consecutive same-subject/same-content lessons, subject filtering, debug dumps to `data/debug/` on unexpected API shapes. If `getTimetable` returns zero periods, calls JSON-RPC `getHolidays` (`UntisClient.holidays()`) and checks `_is_full_holiday_week()` — if the whole Mon–Fri span is covered by a holiday period, persists `{"days": [], "holiday": true}` (this is the one case where an empty-lessons week still gets saved to disk).
 - `app/main.py` — FastAPI app. Routes: `GET /api/weeks`, `GET /api/weeks/{week_id}`, `POST /api/scrape`. Background thread `scheduler()` does weekly auto-scrape (`SCRAPE_DAY`/`SCRAPE_TIME` env). Serves `static/` at `/`.
 - `static/index.html` — single-page vanilla JS/CSS viewer, no build step, no framework.
 - `data/*.json` — one file per ISO week (`YYYY-Www.json`), bind-mounted volume, gitignored.
@@ -15,7 +15,7 @@ Single-container app. Scrapes "Lehrstoff" (teaching content) from WebUntis JSON/
 
 ## Conventions
 - No linter config. Keep it that way unless asked — this is a small personal-use tool, don't over-engineer.
-- **Tests are required for further changes to pass.** `tests/test_scraper.py` covers pure scraper logic (`_hm`, `week_bounds`, `current_week_id`, merging/filtering in `scrape_week`, credential check) with WebUntis network calls stubbed via monkeypatch. `tests/test_api.py` covers all three routes (`/api/weeks`, `/api/weeks/{id}`, `/api/scrape`) via FastAPI `TestClient`, with `scraper.scrape_week` monkeypatched so no real WebUntis calls happen. Run any change through this suite before considering it done, and add cases for new behavior.
+- **Tests are required for further changes to pass.** `tests/test_scraper.py` covers pure scraper logic (`_hm`, `week_bounds`, `current_week_id`, merging/filtering in `scrape_week`, credential check, holiday detection via `holidays()`/`_is_full_holiday_week()`) with WebUntis network calls stubbed via monkeypatch. `tests/test_api.py` covers all three routes (`/api/weeks`, `/api/weeks/{id}`, `/api/scrape`) via FastAPI `TestClient`, with `scraper.scrape_week` monkeypatched so no real WebUntis calls happen. Run any change through this suite before considering it done, and add cases for new behavior.
 - Week id format everywhere: `YYYY-Www` (e.g. `2026-W29`), validated via `WEEK_RE = r"^\d{4}-W\d{2}$"` in both scraper and API layer — keep both in sync if changed.
 - Errors from WebUntis surface as `scraper.ScrapeError`; `main.py` maps that to HTTP 502, unexpected exceptions to 500.
 - Debug dumps (`_dump_debug`) are the primary diagnostic tool when WebUntis changes its API shape — check `data/debug/` before assuming code bugs on scrape failures.

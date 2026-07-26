@@ -110,6 +110,13 @@ class UntisClient:
             raise ScrapeError("unexpected getTimetable response")
         return result
 
+    def holidays(self):
+        result = self._rpc("getHolidays", {})
+        if not isinstance(result, list):
+            _dump_debug("getHolidays", result)
+            raise ScrapeError("unexpected getHolidays response")
+        return result
+
     def teaching_content(self, date: dt.date, start_hm: str, end_hm: str):
         """Fetch Lehrstoff via the calendar-entry detail endpoint (same call the
         WebUntis frontend makes when a lesson modal opens)."""
@@ -164,14 +171,30 @@ def current_week_id(today=None) -> str:
     return f"{iso.year}-W{iso.week:02d}"
 
 
+def _is_full_holiday_week(monday: dt.date, sunday: dt.date, holiday_periods: list) -> bool:
+    """True if every Mon-Fri date of the week falls inside some holiday period."""
+    weekdays = [monday + dt.timedelta(days=i) for i in range(5)]
+    ranges = []
+    for h in holiday_periods:
+        start = dt.datetime.strptime(str(h["startDate"]), "%Y%m%d").date()
+        end = dt.datetime.strptime(str(h["endDate"]), "%Y%m%d").date()
+        ranges.append((start, end))
+    return all(any(start <= d <= end for start, end in ranges) for d in weekdays)
+
+
 def scrape_week(week_id: str) -> dict:
     monday, sunday = week_bounds(week_id)
     log.info("scraping %s (%s .. %s)", week_id, monday, sunday)
 
     client = UntisClient()
     client.login()
+    holiday_periods = None
     try:
         periods = client.timetable(monday, sunday)
+        if not periods:
+            # empty timetable is the WebUntis signal for "school closed" — check
+            # holidays before logging out, while the session is still valid.
+            holiday_periods = client.holidays()
 
         # group double lessons: one entry per (date, subject, start) after sort
         lessons = []
@@ -236,6 +259,13 @@ def scrape_week(week_id: str) -> dict:
     }
 
     if not days:
+        if holiday_periods and _is_full_holiday_week(monday, sunday, holiday_periods):
+            result["holiday"] = True
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            out = DATA_DIR / f"{week_id}.json"
+            out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+            log.info("saved %s (holiday week)", out)
+            return result
         log.info("no lessons in %s — nothing saved", week_id)
         return result
 
