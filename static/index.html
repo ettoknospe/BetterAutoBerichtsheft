@@ -137,12 +137,13 @@ function renderWeek() {
     $("copyBtn").hidden = true;
     return;
   }
-  if (!weekData.holiday && !weekData.days.length) {
+  const noSchedule = weekData.holiday || weekData.schoolYearBoundary;
+  if (!noSchedule && !weekData.days.length) {
     el.innerHTML = `<div class="placeholder">Keine Stunden in dieser Woche gefunden.</div>`;
     $("copyBtn").hidden = true;
     return;
   }
-  el.innerHTML = weekData.holiday ? "" : weekData.days.map((day) => `
+  el.innerHTML = noSchedule ? "" : weekData.days.map((day) => `
     <div class="day">
       <h2>${fmtDate(day.date)}</h2>
       ${day.lessons.map((l) => `
@@ -152,7 +153,11 @@ function renderWeek() {
         </div>`).join("")}
     </div>`).join("");
 
-  const text = weekData.holiday ? "Schulferien" : formattedText(weekData);
+  const text = weekData.holiday
+    ? "Schulferien"
+    : weekData.schoolYearBoundary
+    ? "Wahrscheinlich Schuljahrwechsel"
+    : formattedText(weekData);
   if (text) {
     const tpl = $("summaryTpl").content.cloneNode(true);
     tpl.querySelector("pre").textContent = text;
