@@ -214,6 +214,18 @@ def _is_between_school_years(monday: dt.date, sunday: dt.date, school_years: lis
     return ranges[0][0] <= weekdays[0] and weekdays[-1] <= ranges[-1][1]
 
 
+def _has_real_lessons(path: Path) -> bool:
+    """True only if the saved file has actual lesson data — a previously saved
+    placeholder guess (holiday/schoolYearBoundary, empty days) is safe to
+    overwrite with a better-informed result later."""
+    if not path.exists():
+        return False
+    try:
+        return bool(json.loads(path.read_text()).get("days"))
+    except (json.JSONDecodeError, OSError):
+        return False
+
+
 def scrape_week(week_id: str) -> dict:
     monday, sunday = week_bounds(week_id)
     log.info("scraping %s (%s .. %s)", week_id, monday, sunday)
@@ -326,8 +338,8 @@ def scrape_week(week_id: str) -> dict:
         if school_year_boundary and school_years_list and _is_between_school_years(monday, sunday, school_years_list):
             result["holiday"] = True
             out = DATA_DIR / f"{week_id}.json"
-            if out.exists():
-                log.info("%s already has saved data — not overwriting", week_id)
+            if _has_real_lessons(out):
+                log.info("%s already has real lesson data — not overwriting", week_id)
             else:
                 DATA_DIR.mkdir(parents=True, exist_ok=True)
                 out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
@@ -336,8 +348,8 @@ def scrape_week(week_id: str) -> dict:
         if school_year_boundary:
             result["schoolYearBoundary"] = True
             out = DATA_DIR / f"{week_id}.json"
-            if out.exists():
-                log.info("%s already has saved data — not overwriting with school-year-boundary marker", week_id)
+            if _has_real_lessons(out):
+                log.info("%s already has real lesson data — not overwriting with school-year-boundary marker", week_id)
             else:
                 DATA_DIR.mkdir(parents=True, exist_ok=True)
                 out.write_text(json.dumps(result, indent=2, ensure_ascii=False))

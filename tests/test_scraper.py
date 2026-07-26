@@ -396,3 +396,50 @@ def test_scrape_week_boundary_gap_confirmed_does_not_overwrite_existing_data(mon
     assert result["holiday"] is True
     saved = json.loads((fake_untis / "2026-W29.json").read_text())
     assert saved == existing  # untouched on disk
+
+
+def test_has_real_lessons_false_for_missing_file(tmp_path):
+    assert not scraper._has_real_lessons(tmp_path / "nope.json")
+
+
+def test_has_real_lessons_false_for_placeholder(tmp_path):
+    p = tmp_path / "w.json"
+    p.write_text(json.dumps({"days": [], "schoolYearBoundary": True}))
+    assert not scraper._has_real_lessons(p)
+
+
+def test_has_real_lessons_true_for_real_data(tmp_path):
+    p = tmp_path / "w.json"
+    p.write_text(json.dumps({"days": [{"date": "x", "lessons": []}]}))
+    assert scraper._has_real_lessons(p)
+
+
+def test_scrape_week_gap_confirmed_holiday_overwrites_stale_placeholder(monkeypatch, fake_untis):
+    monday, sunday = scraper.week_bounds("2026-W29")
+    prev_year_end = monday - dt.timedelta(days=1)
+    next_year_start = sunday + dt.timedelta(days=1)
+    stale = {
+        "week": "2026-W29",
+        "start": monday.isoformat(),
+        "end": sunday.isoformat(),
+        "scrapedAt": "2026-01-01T00:00:00",
+        "days": [],
+        "schoolYearBoundary": True,
+    }
+    (fake_untis / "2026-W29.json").write_text(json.dumps(stale))
+    monkeypatch.setattr(scraper.UntisClient, "timetable", _raise_boundary)
+    monkeypatch.setattr(scraper.UntisClient, "holidays", _raise_holidays_error)
+    monkeypatch.setattr(
+        scraper.UntisClient,
+        "school_years",
+        lambda self: [
+            {"startDate": 20250801, "endDate": int(prev_year_end.strftime("%Y%m%d"))},
+            {"startDate": int(next_year_start.strftime("%Y%m%d")), "endDate": 20270731},
+        ],
+    )
+
+    result = scraper.scrape_week("2026-W29")
+
+    assert result["holiday"] is True
+    saved = json.loads((fake_untis / "2026-W29.json").read_text())
+    assert saved == result  # stale guess got replaced with the better-informed answer
