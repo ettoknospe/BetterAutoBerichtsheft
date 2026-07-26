@@ -137,12 +137,23 @@ function renderWeek() {
     $("copyBtn").hidden = true;
     return;
   }
-  if (!weekData.days.length) {
+  if (weekData.unavailable) {
+    el.innerHTML = `<div class="placeholder">Kann noch nicht abgerufen werden.<br>WebUntis hat diesen Zeitraum noch nicht freigegeben.</div>`;
+    $("copyBtn").hidden = true;
+    return;
+  }
+  if (weekData.allCancelled) {
+    el.innerHTML = `<div class="placeholder">Alle Stunden in dieser Woche wurden abgesagt.</div>`;
+    $("copyBtn").hidden = true;
+    return;
+  }
+  const noSchedule = weekData.holiday || weekData.schoolYearBoundary;
+  if (!noSchedule && !weekData.days.length) {
     el.innerHTML = `<div class="placeholder">Keine Stunden in dieser Woche gefunden.</div>`;
     $("copyBtn").hidden = true;
     return;
   }
-  el.innerHTML = weekData.days.map((day) => `
+  el.innerHTML = noSchedule ? "" : weekData.days.map((day) => `
     <div class="day">
       <h2>${fmtDate(day.date)}</h2>
       ${day.lessons.map((l) => `
@@ -152,7 +163,11 @@ function renderWeek() {
         </div>`).join("")}
     </div>`).join("");
 
-  const text = formattedText(weekData);
+  const text = weekData.holiday
+    ? "Schulferien"
+    : weekData.schoolYearBoundary
+    ? "Wahrscheinlich Schuljahrwechsel"
+    : formattedText(weekData);
   if (text) {
     const tpl = $("summaryTpl").content.cloneNode(true);
     tpl.querySelector("pre").textContent = text;

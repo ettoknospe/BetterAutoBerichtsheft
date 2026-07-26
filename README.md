@@ -29,8 +29,30 @@ Open http://localhost:8000 (on the Pi: http://<pi-ip>:8000).
 
 On unexpected API responses raw payloads are dumped to `data/debug/` for diagnosis.
 
+## Weeks with no lessons
+
+Not every empty week means "not scraped yet" — the app tries to say why instead:
+
+- **Schulferien** — confirmed via WebUntis's own `getHolidays`/`getSchoolyears` data (no
+  hardcoded holiday dates).
+- **Wahrscheinlich Schuljahrwechsel** — the week straddles two school years and WebUntis
+  can't say for sure whether it's a holiday.
+- **Alle Stunden in dieser Woche wurden abgesagt** — real lessons exist but every one is
+  cancelled (e.g. the first week of a new school year before the schedule is active).
+- **Kann noch nicht abgerufen werden** — the week is further in the future than WebUntis
+  currently allows querying; try again later.
+
 ## API
 
 - `GET /api/weeks` — available weeks + current ISO week
 - `GET /api/weeks/2026-W29` — data for one week
 - `POST /api/scrape` — body `{"week": "2026-W29"}` (optional, default current week)
+
+## Tests
+
+```bash
+docker compose build
+docker run --rm -v "$PWD/tests":/srv/tests -v "$PWD/pytest.ini":/srv/pytest.ini \
+  --entrypoint bash berichtsheft-berichtsheft \
+  -c "pip install -q pytest==8.3.4 httpx==0.28.1 && cd /srv && pytest -q"
+```
