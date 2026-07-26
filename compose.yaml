@@ -1,0 +1,12 @@
+services:
+  berichtsheft:
+    build: .
+    container_name: berichtsheft
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      TZ: Europe/Berlin
+    volumes:
+      - ./data:/data
+    restart: unless-stopped

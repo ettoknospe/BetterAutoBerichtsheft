@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Berichtsheft</title>
+<style>
+  :root {
+    --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73;
+    --accent: #0071e3; --border: #d2d2d7; --ok: #34c759; --err: #ff3b30;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161617; --card: #1d1d1f; --text: #f5f5f7; --muted: #86868b; --border: #3a3a3c; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); max-width: 720px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+  h1 { font-size: 1.6rem; margin-bottom: 1rem; }
+  .nav { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+  .nav button, .actions button { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: .45rem .8rem; font-size: 1rem; cursor: pointer; }
+  .nav button:hover, .actions button:hover { border-color: var(--accent); }
+  .nav select { flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: .45rem .6rem; font-size: 1rem; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
+  .actions { display: flex; gap: .5rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .actions .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .day { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; margin-bottom: .9rem; }
+  .day h2 { font-size: 1.05rem; margin-bottom: .6rem; }
+  .lesson { padding: .5rem 0; border-top: 1px solid var(--border); }
+  .lesson:first-of-type { border-top: none; }
+  .lesson .head { display: flex; gap: .6rem; align-items: baseline; }
+  .lesson .subj { font-weight: 600; }
+  .lesson .time { color: var(--muted); font-size: .8rem; }
+  .lesson .content { white-space: pre-wrap; margin-top: .15rem; }
+  .lesson .empty { color: var(--muted); font-style: italic; }
+  .summary { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; margin-bottom: 1.5rem; }
+  .summary h2 { font-size: 1.05rem; margin-bottom: .6rem; display: flex; justify-content: space-between; align-items: center; }
+  .summary pre { white-space: pre-wrap; font: inherit; }
+  #status { min-height: 1.4rem; font-size: .9rem; margin-bottom: 1rem; }
+  #status.err { color: var(--err); } #status.ok { color: var(--ok); }
+  .placeholder { color: var(--muted); text-align: center; padding: 3rem 0; }
+</style>
+</head>
+<body>
+<h1>📓 Berichtsheft</h1>
+
+<div class="nav">
+  <button id="prev" title="Woche zurück">←</button>
+  <select id="weekSelect"></select>
+  <button id="next" title="Woche vor">→</button>
+</div>
+<div class="meta" id="weekMeta"></div>
+
+<div class="actions">
+  <button class="primary" id="scrapeBtn">Jetzt Abrufen</button>
+  <button id="copyBtn" hidden>Text kopieren</button>
+</div>
+<div id="status"></div>
+
+<div id="content"><div class="placeholder">Lade…</div></div>
+
+<template id="summaryTpl">
+  <div class="summary">
+    <h2>Formatierter Text</h2>
+    <pre></pre>
+  </div>
+</template>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let weeks = [];          // weeks with data
+let selected = null;     // "2026-W29"
+let weekData = null;
+
+const fmtDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
+const fmtShort = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+
+function weekBounds(id) {
+  const [y, w] = id.split("-W").map(Number);
+  // ISO week 1 = week containing Jan 4
+  const jan4 = new Date(Date.UTC(y, 0, 4));
+  const monday = new Date(jan4);
+  monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (w - 1) * 7);
+  const sunday = new Date(monday); sunday.setUTCDate(monday.getUTCDate() + 6);
+  return [monday.toISOString().slice(0, 10), sunday.toISOString().slice(0, 10)];
+}
+function shiftWeek(id, delta) {
+  const [start] = weekBounds(id);
+  const d = new Date(start + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + delta * 7);
+  // ISO week of shifted monday
+  const t = new Date(d); t.setUTCDate(t.getUTCDate() + 3); // thursday decides ISO year
+  const isoYear = t.getUTCFullYear();
+  const jan4 = new Date(Date.UTC(isoYear, 0, 4));
+  const week1Mon = new Date(jan4); week1Mon.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
+  const wk = Math.round((d - week1Mon) / (7 * 864e5)) + 1;
+  return `${isoYear}-W${String(wk).padStart(2, "0")}`;
+}
+
+function setStatus(msg, cls = "") { const s = $("status"); s.textContent = msg; s.className = cls; }
+
+function renderSelect() {
+  const all = new Set(weeks);
+  all.add(selected);
+  const sorted = [...all].sort();
+  $("weekSelect").innerHTML = sorted.map((w) => {
+    const [s, e] = weekBounds(w);
+    const label = `${w} (${fmtShort(s)} – ${fmtShort(e)})${weeks.includes(w) ? "" : " · keine Daten"}`;
+    return `<option value="${w}" ${w === selected ? "selected" : ""}>${label}</option>`;
+  }).join("");
+}
+
+function formattedText(data) {
+  const bySubject = new Map();
+  for (const day of data.days) {
+    for (const l of day.lessons) {
+      if (!l.content) continue;
+      const key = l.subjectLong || l.subject;
+      if (!bySubject.has(key)) bySubject.set(key, new Set());
+      bySubject.get(key).add(l.content.trim());
+    }
+  }
+  const parts = [];
+  for (const [subj, contents] of bySubject) {
+    parts.push(subj + ":\n" + [...contents].map((c) => "- " + c.replace(/\n+/g, "; ")).join("\n"));
+  }
+  return parts.join("\n\n");
+}
+
+function renderWeek() {
+  const el = $("content");
+  const [s, e] = weekBounds(selected);
+  $("weekMeta").textContent = weekData
+    ? `${fmtShort(s)} – ${fmtShort(e)} · gescraped ${new Date(weekData.scrapedAt).toLocaleString("de-DE")}`
+    : `${fmtShort(s)} – ${fmtShort(e)}`;
+
+  if (!weekData) {
+    el.innerHTML = `<div class="placeholder">Keine Daten für ${selected}.<br>„Jetzt scrapen" holt diese Woche aus WebUntis.</div>`;
+    $("copyBtn").hidden = true;
+    return;
+  }
+  if (!weekData.days.length) {
+    el.innerHTML = `<div class="placeholder">Keine Stunden in dieser Woche gefunden.</div>`;
+    $("copyBtn").hidden = true;
+    return;
+  }
+  el.innerHTML = weekData.days.map((day) => `
+    <div class="day">
+      <h2>${fmtDate(day.date)}</h2>
+      ${day.lessons.map((l) => `
+        <div class="lesson">
+          <div class="head"><span class="subj">${l.subjectLong || l.subject}</span><span class="time">${l.start}–${l.end}${l.teacher ? " · " + l.teacher : ""}</span></div>
+          ${l.content ? `<div class="content">${l.content}</div>` : `<div class="empty">kein Lehrstoff eingetragen</div>`}
+        </div>`).join("")}
+    </div>`).join("");
+
+  const text = formattedText(weekData);
+  if (text) {
+    const tpl = $("summaryTpl").content.cloneNode(true);
+    tpl.querySelector("pre").textContent = text;
+    el.prepend(tpl);
+    $("copyBtn").hidden = false;
+    $("copyBtn").onclick = async () => {
+      await navigator.clipboard.writeText(text);
+      setStatus("Text kopiert.", "ok");
+      setTimeout(() => setStatus(""), 2000);
+    };
+  } else {
+    $("copyBtn").hidden = true;
+  }
+}
+
+async function loadWeek(id) {
+  selected = id;
+  weekData = null;
+  const res = await fetch(`/api/weeks/${id}`);
+  if (res.ok) weekData = await res.json();
+  renderSelect();
+  renderWeek();
+}
+
+async function refreshWeeks() {
+  const res = await fetch("/api/weeks");
+  const data = await res.json();
+  weeks = data.weeks;
+  return data.current;
+}
+
+$("prev").onclick = () => loadWeek(shiftWeek(selected, -1));
+$("next").onclick = () => loadWeek(shiftWeek(selected, 1));
+$("weekSelect").onchange = (e) => loadWeek(e.target.value);
+
+$("scrapeBtn").onclick = async () => {
+  const btn = $("scrapeBtn");
+  btn.disabled = true;
+  setStatus(`Scrape ${selected} läuft…`);
+  try {
+    const res = await fetch("/api/scrape", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ week: selected }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body.detail || res.statusText);
+    setStatus("Scrape fertig.", "ok");
+    await refreshWeeks();
+    await loadWeek(selected);
+  } catch (e) {
+    setStatus("Fehler: " + e.message, "err");
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+(async () => {
+  const current = await refreshWeeks();
+  await loadWeek(weeks.includes(current) ? current : (weeks.at(-1) || current));
+})();
+</script>
+</body>
+</html>
