@@ -29,6 +29,7 @@ DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 
 STUDENT_TYPE = 5  # WebUntis element type for students
 SCHOOL_YEAR_BOUNDARY_CODE = -8507  # getTimetable error when start/end span two school years
+NO_ALLOWED_DATE_CODE = -7004  # getTimetable error when the date is beyond WebUntis's publish horizon
 
 
 class ScrapeError(Exception):
@@ -235,35 +236,24 @@ def scrape_week(week_id: str) -> dict:
     holiday_periods = None
     school_years_list = None
     school_year_boundary = False
+    unavailable = False
     try:
         try:
             periods = client.timetable(monday, sunday)
         except ScrapeError as e:
-            if e.code != SCHOOL_YEAR_BOUNDARY_CODE:
+            if e.code == SCHOOL_YEAR_BOUNDARY_CODE:
+                # week straddles a school-year boundary — WebUntis refuses the
+                # query outright. Not a real error, treat like an empty week
+                # and check below whether it's also an actual holiday.
+                periods = []
+                school_year_boundary = True
+            elif e.code == NO_ALLOWED_DATE_CODE:
+                # date is beyond WebUntis's publish horizon — nothing to check,
+                # not fixable right now, just surface it plainly.
+                periods = []
+                unavailable = True
+            else:
                 raise
-            # week straddles a school-year boundary — WebUntis refuses the query
-            # outright. Not a real error, treat like an empty week and check
-            # below whether it's also an actual holiday.
-            periods = []
-            school_year_boundary = True
-        if not periods:
-            # empty timetable is the WebUntis signal for "school closed" — check
-            # holidays before logging out, while the session is still valid.
-            try:
-                holiday_periods = client.holidays()
-            except ScrapeError:
-                # can also fail right at a school-year boundary (WebUntis has no
-                # "current" school year yet) — leave unconfirmed, not fatal.
-                log.warning("getHolidays failed for %s, leaving holiday status unconfirmed", week_id)
-
-        if school_year_boundary and not (holiday_periods and _is_full_holiday_week(monday, sunday, holiday_periods)):
-            # getHolidays is unreliable right at the boundary itself — fall back
-            # to checking whether the week sits in the gap between two school
-            # years (derived from WebUntis data, no hardcoded dates).
-            try:
-                school_years_list = client.school_years()
-            except ScrapeError:
-                log.warning("getSchoolyears failed for %s", week_id)
 
         # group double lessons: one entry per (date, subject, start) after sort
         lessons = []
@@ -288,6 +278,29 @@ def scrape_week(week_id: str) -> dict:
                 }
             )
         lessons.sort(key=lambda l: (l["date"], l["start"]))
+
+        if not lessons and not unavailable:
+            # no usable (non-cancelled) periods at all — either a real holiday
+            # (WebUntis returns cancelled placeholder periods through it) or a
+            # school-year-boundary week. Check holidays before logging out,
+            # while the session is still valid.
+            try:
+                holiday_periods = client.holidays()
+            except ScrapeError:
+                # can also fail right at a school-year boundary (WebUntis has no
+                # "current" school year yet) — leave unconfirmed, not fatal.
+                log.warning("getHolidays failed for %s, leaving holiday status unconfirmed", week_id)
+
+        confirmed_holiday = holiday_periods and _is_full_holiday_week(monday, sunday, holiday_periods)
+        if not lessons and not unavailable and not confirmed_holiday:
+            # getHolidays can be unconfirmed or fail entirely right at a
+            # school-year transition — fall back to checking whether the week
+            # sits in the gap between two school years (derived from WebUntis
+            # data, no hardcoded dates).
+            try:
+                school_years_list = client.school_years()
+            except ScrapeError:
+                log.warning("getSchoolyears failed for %s", week_id)
 
         if SUBJECT_FILTER:
             lessons = [l for l in lessons if l["subject"] in SUBJECT_FILTER]
@@ -328,6 +341,16 @@ def scrape_week(week_id: str) -> dict:
     }
 
     if not days:
+        if unavailable:
+            result["unavailable"] = True
+            out = DATA_DIR / f"{week_id}.json"
+            if _has_real_lessons(out):
+                log.info("%s already has real lesson data — not overwriting with unavailable marker", week_id)
+            else:
+                DATA_DIR.mkdir(parents=True, exist_ok=True)
+                out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+                log.info("saved %s (beyond WebUntis publish horizon)", out)
+            return result
         if holiday_periods and _is_full_holiday_week(monday, sunday, holiday_periods):
             result["holiday"] = True
             DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -335,7 +358,7 @@ def scrape_week(week_id: str) -> dict:
             out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
             log.info("saved %s (holiday week)", out)
             return result
-        if school_year_boundary and school_years_list and _is_between_school_years(monday, sunday, school_years_list):
+        if school_years_list and _is_between_school_years(monday, sunday, school_years_list):
             result["holiday"] = True
             out = DATA_DIR / f"{week_id}.json"
             if _has_real_lessons(out):
@@ -354,6 +377,20 @@ def scrape_week(week_id: str) -> dict:
                 DATA_DIR.mkdir(parents=True, exist_ok=True)
                 out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
                 log.info("saved %s (school-year boundary, not a confirmed holiday)", out)
+            return result
+        if periods:
+            # WebUntis returned real periods but every one was cancelled, and
+            # neither getHolidays nor getSchoolyears confirmed a holiday —
+            # still worth surfacing honestly instead of pretending nothing
+            # was ever scraped.
+            result["allCancelled"] = True
+            out = DATA_DIR / f"{week_id}.json"
+            if _has_real_lessons(out):
+                log.info("%s already has real lesson data — not overwriting with allCancelled marker", week_id)
+            else:
+                DATA_DIR.mkdir(parents=True, exist_ok=True)
+                out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
+                log.info("saved %s (all periods cancelled, not a confirmed holiday)", out)
             return result
         log.info("no lessons in %s — nothing saved", week_id)
         return result
