@@ -15,7 +15,9 @@ Open http://localhost:8000 (on the Pi: http://<pi-ip>:8000).
 
 - Arrows / dropdown switch weeks, weeks without data can be scraped on demand
   with the **Jetzt scrapen** button.
-- Auto-scrape of the current week every Sunday 18:00 (`SCRAPE_DAY` / `SCRAPE_TIME`).
+- Auto-scrape of the current **and previous** ISO week every Sunday 18:00
+  (`SCRAPE_DAY` / `SCRAPE_TIME`) — catches Lehrstoff teachers enter after the week
+  is already over.
 - Data lives as one JSON per ISO week in `./data/` (bind-mounted volume).
 - The "Formatierter Text" block at the bottom is the deduped, copy-paste-ready
   Berichtsheft text; **Text kopieren** copies it.
