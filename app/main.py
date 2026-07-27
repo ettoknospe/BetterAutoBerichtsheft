@@ -21,6 +21,7 @@ SCRAPE_DAY = os.environ.get("SCRAPE_DAY", "sun").lower()  # mon..sun, or "off"
 SCRAPE_TIME = os.environ.get("SCRAPE_TIME", "18:00")
 WEEK_RE = re.compile(r"^\d{4}-W\d{2}$")
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+_SCRAPE_HOUR, _SCRAPE_MINUTE = (int(x) for x in SCRAPE_TIME.split(":"))
 
 app = FastAPI(title="Berichtsheft")
 scrape_lock = threading.Lock()
@@ -65,27 +66,42 @@ def scrape(req: ScrapeRequest):
         scrape_lock.release()
 
 
+def _scrape_due(now: dt.datetime, last_run_date) -> bool:
+    return (
+        DAYS[now.weekday()] == SCRAPE_DAY
+        and (now.hour, now.minute) >= (_SCRAPE_HOUR, _SCRAPE_MINUTE)
+        and last_run_date != now.date()
+    )
+
+
+def _weeks_to_scrape(today=None):
+    """Current week plus the previous one — teachers sometimes add Lehrstoff
+    for a week after it's over, so re-checking last week catches that."""
+    today = today or dt.date.today()
+    return [scraper.current_week_id(today - dt.timedelta(days=7)), scraper.current_week_id(today)]
+
+
+def _scheduled_scrape(today=None):
+    for week_id in _weeks_to_scrape(today):
+        try:
+            scraper.scrape_week(week_id)
+        except Exception:
+            log.exception("scheduled scrape of %s failed", week_id)
+
+
 def scheduler():
-    """Scrape current week every SCRAPE_DAY at SCRAPE_TIME (container TZ)."""
+    """Scrape current + previous week every SCRAPE_DAY at SCRAPE_TIME (container TZ)."""
     if SCRAPE_DAY not in DAYS:
         log.info("scheduler off (SCRAPE_DAY=%s)", SCRAPE_DAY)
         return
-    hour, minute = (int(x) for x in SCRAPE_TIME.split(":"))
     last_run_date = None
     log.info("scheduler: every %s at %s", SCRAPE_DAY, SCRAPE_TIME)
     while True:
         now = dt.datetime.now()
-        due = (
-            DAYS[now.weekday()] == SCRAPE_DAY
-            and (now.hour, now.minute) >= (hour, minute)
-            and last_run_date != now.date()
-        )
-        if due and scrape_lock.acquire(blocking=False):
+        if _scrape_due(now, last_run_date) and scrape_lock.acquire(blocking=False):
             try:
                 last_run_date = now.date()
-                scraper.scrape_week(scraper.current_week_id())
-            except Exception:
-                log.exception("scheduled scrape failed")
+                _scheduled_scrape()
             finally:
                 scrape_lock.release()
         time.sleep(60)
