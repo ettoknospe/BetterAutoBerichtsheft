@@ -1,8 +1,8 @@
 # Berichtsheft
 
-Scrapes Lehrstoff (teaching content) from WebUntis via its JSON API — no browser,
-no Playwright — and serves a small week-based viewer. One Docker container,
-runs on amd64 and Raspberry Pi (arm64).
+Scrapes Lehrstoff (teaching content) from WebUntis via its JSON/REST API and
+serves a small week-based viewer. One Docker container, runs on amd64 and
+Raspberry Pi (arm64).
 
 ## Run
 
@@ -11,7 +11,7 @@ cp .env.example .env   # fill in UNTIS_USER / UNTIS_PASS
 docker compose up -d --build
 ```
 
-Open http://localhost:8000 (on the Pi: http://<pi-ip>:8000).
+Open http://localhost:8001 (on the Pi: http://<pi-ip>:8001).
 
 - Arrows / dropdown switch weeks, weeks without data can be scraped on demand
   with the **Jetzt scrapen** button.
@@ -55,6 +55,6 @@ Not every empty week means "not scraped yet" — the app tries to say why instea
 ```bash
 docker compose build
 docker run --rm -v "$PWD/tests":/srv/tests -v "$PWD/pytest.ini":/srv/pytest.ini \
-  --entrypoint bash berichtsheft-berichtsheft \
+  --entrypoint bash bab2-berichtsheft \
   -c "pip install -q pytest==8.3.4 httpx==0.28.1 && cd /srv && pytest -q"
 ```

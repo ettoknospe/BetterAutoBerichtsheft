@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+import config
 import scraper
 
 
@@ -40,10 +41,10 @@ def _period(date, subject, start, end, code=None, teacher="Teacher"):
 @pytest.fixture
 def fake_untis(monkeypatch, tmp_path):
     """Stub out network I/O in UntisClient; redirect DATA_DIR to tmp_path."""
-    monkeypatch.setattr(scraper, "UNTIS_USER", "u")
-    monkeypatch.setattr(scraper, "UNTIS_PASS", "p")
-    monkeypatch.setattr(scraper, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(scraper, "SUBJECT_FILTER", [])
+    monkeypatch.setattr(config, "UNTIS_USER", "u")
+    monkeypatch.setattr(config, "UNTIS_PASS", "p")
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(config, "SUBJECT_FILTER", [])
     monkeypatch.setattr(scraper.UntisClient, "login", lambda self: None)
     monkeypatch.setattr(scraper.UntisClient, "logout", lambda self: None)
     return tmp_path
@@ -94,7 +95,7 @@ def test_scrape_week_applies_subject_filter(monkeypatch, fake_untis):
     ]
     monkeypatch.setattr(scraper.UntisClient, "timetable", lambda self, s, e: periods)
     monkeypatch.setattr(scraper.UntisClient, "teaching_content", lambda self, d, s, e: "")
-    monkeypatch.setattr(scraper, "SUBJECT_FILTER", ["BIO"])
+    monkeypatch.setattr(config, "SUBJECT_FILTER", ["BIO"])
 
     result = scraper.scrape_week("2026-W29")
 
@@ -116,23 +117,23 @@ def test_scrape_week_no_lessons_returns_empty_days_without_saving(monkeypatch, f
 
 
 def test_untis_client_requires_credentials(monkeypatch):
-    monkeypatch.setattr(scraper, "UNTIS_USER", "")
-    monkeypatch.setattr(scraper, "UNTIS_PASS", "")
+    monkeypatch.setattr(config, "UNTIS_USER", "")
+    monkeypatch.setattr(config, "UNTIS_PASS", "")
     with pytest.raises(scraper.ScrapeError):
         scraper.UntisClient()
 
 
 def test_holidays_returns_list(monkeypatch):
-    monkeypatch.setattr(scraper, "UNTIS_USER", "u")
-    monkeypatch.setattr(scraper, "UNTIS_PASS", "p")
+    monkeypatch.setattr(config, "UNTIS_USER", "u")
+    monkeypatch.setattr(config, "UNTIS_PASS", "p")
     client = scraper.UntisClient()
     monkeypatch.setattr(client, "_rpc", lambda method, params: [{"name": "Sommerferien"}])
     assert client.holidays() == [{"name": "Sommerferien"}]
 
 
 def test_holidays_raises_on_unexpected_shape(monkeypatch):
-    monkeypatch.setattr(scraper, "UNTIS_USER", "u")
-    monkeypatch.setattr(scraper, "UNTIS_PASS", "p")
+    monkeypatch.setattr(config, "UNTIS_USER", "u")
+    monkeypatch.setattr(config, "UNTIS_PASS", "p")
     client = scraper.UntisClient()
     monkeypatch.setattr(client, "_rpc", lambda method, params: {"unexpected": True})
     with pytest.raises(scraper.ScrapeError):
@@ -216,8 +217,8 @@ def _raise_boundary(self, start, end):
 
 
 def test_rpc_error_carries_webuntis_code(monkeypatch):
-    monkeypatch.setattr(scraper, "UNTIS_USER", "u")
-    monkeypatch.setattr(scraper, "UNTIS_PASS", "p")
+    monkeypatch.setattr(config, "UNTIS_USER", "u")
+    monkeypatch.setattr(config, "UNTIS_PASS", "p")
     client = scraper.UntisClient()
 
     class FakeResponse:
@@ -316,16 +317,16 @@ def test_scrape_week_plain_empty_week_not_saved_if_holidays_call_fails(monkeypat
 
 
 def test_school_years_returns_list(monkeypatch):
-    monkeypatch.setattr(scraper, "UNTIS_USER", "u")
-    monkeypatch.setattr(scraper, "UNTIS_PASS", "p")
+    monkeypatch.setattr(config, "UNTIS_USER", "u")
+    monkeypatch.setattr(config, "UNTIS_PASS", "p")
     client = scraper.UntisClient()
     monkeypatch.setattr(client, "_rpc", lambda method, params: [{"name": "2025/2026"}])
     assert client.school_years() == [{"name": "2025/2026"}]
 
 
 def test_school_years_raises_on_unexpected_shape(monkeypatch):
-    monkeypatch.setattr(scraper, "UNTIS_USER", "u")
-    monkeypatch.setattr(scraper, "UNTIS_PASS", "p")
+    monkeypatch.setattr(config, "UNTIS_USER", "u")
+    monkeypatch.setattr(config, "UNTIS_PASS", "p")
     client = scraper.UntisClient()
     monkeypatch.setattr(client, "_rpc", lambda method, params: {"unexpected": True})
     with pytest.raises(scraper.ScrapeError):
