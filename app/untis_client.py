@@ -1,0 +1,143 @@
+"""WebUntis JSON-RPC + REST client.
+
+Reads UNTIS_HOST/SCHOOL/USER/PASS off the `scraper` module at call time (not
+at import time) so tests that do `monkeypatch.setattr(scraper, "UNTIS_USER",
+...)` keep working unchanged - see app/scraper.py for why this module and
+scraper import each other.
+"""
+
+import datetime as dt
+
+import requests
+
+import scraper as _scraper
+from storage import _dump_debug
+
+STUDENT_TYPE = 5  # WebUntis element type for students
+SCHOOL_YEAR_BOUNDARY_CODE = -8507  # getTimetable error when start/end span two school years
+NO_ALLOWED_DATE_CODE = -7004  # getTimetable error when the date is beyond WebUntis's publish horizon
+
+
+class ScrapeError(Exception):
+    def __init__(self, message, code=None):
+        super().__init__(message)
+        self.code = code
+
+
+class UntisClient:
+    def __init__(self):
+        if not _scraper.UNTIS_USER or not _scraper.UNTIS_PASS:
+            raise ScrapeError("UNTIS_USER / UNTIS_PASS not set")
+        self.base = f"https://{_scraper.UNTIS_HOST}"
+        self.s = requests.Session()
+        self.s.headers["User-Agent"] = "berichtsheft/1.0"
+        self.person_id = None
+        self.token = None
+
+    def _rpc(self, method, params):
+        r = self.s.post(
+            f"{self.base}/WebUntis/jsonrpc.do",
+            params={"school": _scraper.UNTIS_SCHOOL},
+            json={"id": "bab", "jsonrpc": "2.0", "method": method, "params": params},
+            timeout=30,
+        )
+        r.raise_for_status()
+        data = r.json()
+        if "error" in data:
+            _dump_debug(f"rpc-{method}", data)
+            err = data["error"]
+            code = err.get("code") if isinstance(err, dict) else None
+            raise ScrapeError(f"WebUntis RPC {method} failed: {err}", code=code)
+        return data.get("result")
+
+    def login(self):
+        result = self._rpc(
+            "authenticate", {"user": _scraper.UNTIS_USER, "password": _scraper.UNTIS_PASS, "client": "berichtsheft"}
+        )
+        self.person_id = result.get("personId")
+        if not self.person_id:
+            _dump_debug("authenticate", result)
+            raise ScrapeError("login ok but no personId in response")
+        # bearer token used by the REST endpoints of the new frontend
+        r = self.s.get(f"{self.base}/WebUntis/api/token/new", timeout=30)
+        if r.ok and r.text and len(r.text) < 4096:
+            self.token = r.text.strip()
+        else:
+            _scraper.log.warning("token/new failed (%s) — detail endpoint may not work", r.status_code)
+        _scraper.log.info("logged in, personId=%s", self.person_id)
+
+    def logout(self):
+        try:
+            self._rpc("logout", {})
+        except Exception:
+            pass
+
+    def timetable(self, start: dt.date, end: dt.date):
+        result = self._rpc(
+            "getTimetable",
+            {
+                "options": {
+                    "element": {"id": self.person_id, "type": STUDENT_TYPE},
+                    "startDate": int(start.strftime("%Y%m%d")),
+                    "endDate": int(end.strftime("%Y%m%d")),
+                    "showSubstText": True,
+                    "showLsText": True,
+                    "showInfo": True,
+                    "subjectFields": ["name", "longname"],
+                    "teacherFields": ["name", "longname"],
+                }
+            },
+        )
+        if not isinstance(result, list):
+            _dump_debug("getTimetable", result)
+            raise ScrapeError("unexpected getTimetable response")
+        return result
+
+    def holidays(self):
+        result = self._rpc("getHolidays", {})
+        if not isinstance(result, list):
+            _dump_debug("getHolidays", result)
+            raise ScrapeError("unexpected getHolidays response")
+        return result
+
+    def school_years(self):
+        result = self._rpc("getSchoolyears", {})
+        if not isinstance(result, list):
+            _dump_debug("getSchoolyears", result)
+            raise ScrapeError("unexpected getSchoolyears response")
+        return result
+
+    def teaching_content(self, date: dt.date, start_hm: str, end_hm: str):
+        """Fetch Lehrstoff via the calendar-entry detail endpoint (same call the
+        WebUntis frontend makes when a lesson modal opens)."""
+        if not self.token:
+            return ""
+        params = {
+            "elementId": self.person_id,
+            "elementType": STUDENT_TYPE,
+            "startDateTime": f"{date:%Y-%m-%d}T{start_hm}:00",
+            "endDateTime": f"{date:%Y-%m-%d}T{end_hm}:00",
+            "homeworkOption": "DUE",
+        }
+        r = self.s.get(
+            f"{self.base}/WebUntis/api/rest/view/v2/calendar-entry/detail",
+            params=params,
+            headers={"Authorization": f"Bearer {self.token}"},
+            timeout=30,
+        )
+        if not r.ok:
+            _scraper.log.warning("calendar-entry/detail %s for %s %s", r.status_code, date, start_hm)
+            if r.status_code not in (404,):
+                _dump_debug("detail-error", {"status": r.status_code, "body": r.text[:2000], "params": params})
+            return ""
+        try:
+            data = r.json()
+        except ValueError:
+            _dump_debug("detail-nonjson", {"body": r.text[:2000], "params": params})
+            return ""
+        texts = []
+        for entry in data.get("calendarEntries", []):
+            tc = entry.get("teachingContent")
+            if tc:
+                texts.append(str(tc).strip())
+        return "\n".join(t for t in texts if t)
