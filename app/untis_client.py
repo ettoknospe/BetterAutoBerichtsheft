@@ -1,17 +1,14 @@
-"""WebUntis JSON-RPC + REST client.
-
-Reads UNTIS_HOST/SCHOOL/USER/PASS off the `scraper` module at call time (not
-at import time) so tests that do `monkeypatch.setattr(scraper, "UNTIS_USER",
-...)` keep working unchanged - see app/scraper.py for why this module and
-scraper import each other.
-"""
+"""WebUntis JSON-RPC + REST client."""
 
 import datetime as dt
+import logging
 
 import requests
 
-import scraper as _scraper
+import config
 from storage import _dump_debug
+
+log = logging.getLogger("scraper")
 
 STUDENT_TYPE = 5  # WebUntis element type for students
 SCHOOL_YEAR_BOUNDARY_CODE = -8507  # getTimetable error when start/end span two school years
@@ -26,9 +23,9 @@ class ScrapeError(Exception):
 
 class UntisClient:
     def __init__(self):
-        if not _scraper.UNTIS_USER or not _scraper.UNTIS_PASS:
+        if not config.UNTIS_USER or not config.UNTIS_PASS:
             raise ScrapeError("UNTIS_USER / UNTIS_PASS not set")
-        self.base = f"https://{_scraper.UNTIS_HOST}"
+        self.base = f"https://{config.UNTIS_HOST}"
         self.s = requests.Session()
         self.s.headers["User-Agent"] = "berichtsheft/1.0"
         self.person_id = None
@@ -37,7 +34,7 @@ class UntisClient:
     def _rpc(self, method, params):
         r = self.s.post(
             f"{self.base}/WebUntis/jsonrpc.do",
-            params={"school": _scraper.UNTIS_SCHOOL},
+            params={"school": config.UNTIS_SCHOOL},
             json={"id": "bab", "jsonrpc": "2.0", "method": method, "params": params},
             timeout=30,
         )
@@ -52,7 +49,7 @@ class UntisClient:
 
     def login(self):
         result = self._rpc(
-            "authenticate", {"user": _scraper.UNTIS_USER, "password": _scraper.UNTIS_PASS, "client": "berichtsheft"}
+            "authenticate", {"user": config.UNTIS_USER, "password": config.UNTIS_PASS, "client": "berichtsheft"}
         )
         self.person_id = result.get("personId")
         if not self.person_id:
@@ -63,8 +60,8 @@ class UntisClient:
         if r.ok and r.text and len(r.text) < 4096:
             self.token = r.text.strip()
         else:
-            _scraper.log.warning("token/new failed (%s) — detail endpoint may not work", r.status_code)
-        _scraper.log.info("logged in, personId=%s", self.person_id)
+            log.warning("token/new failed (%s) — detail endpoint may not work", r.status_code)
+        log.info("logged in, personId=%s", self.person_id)
 
     def logout(self):
         try:
@@ -126,7 +123,7 @@ class UntisClient:
             timeout=30,
         )
         if not r.ok:
-            _scraper.log.warning("calendar-entry/detail %s for %s %s", r.status_code, date, start_hm)
+            log.warning("calendar-entry/detail %s for %s %s", r.status_code, date, start_hm)
             if r.status_code not in (404,):
                 _dump_debug("detail-error", {"status": r.status_code, "body": r.text[:2000], "params": params})
             return ""

@@ -1,4 +1,4 @@
-"""WebUntis scraper — plain HTTP, no browser.
+"""WebUntis scraper - plain HTTP, no browser.
 
 Flow:
   1. JSON-RPC authenticate -> session cookie + personId
@@ -9,42 +9,29 @@ Flow:
 On unexpected API responses the raw payload is dumped to DATA_DIR/debug/
 so a failing first run can be diagnosed without re-running blind.
 
-Module layout: this file owns runtime config (env vars) and orchestration
-(scrape_week). It's split into untis_client.py (HTTP/RPC client),
-time_utils.py and school_calendar.py (pure date helpers), and storage.py
-(local file I/O) - see each for its slice. untis_client.py and storage.py
-import *this* module back (`import scraper as _scraper`) rather than
-copying config values at import time, so that tests doing
-`monkeypatch.setattr(scraper, "UNTIS_USER", ...)` still reach the code that
-actually uses it. That's a real circular import, made safe only because the
-config constants below are defined before those submodules are imported.
+Module layout: this file owns orchestration (scrape_week). Runtime config
+lives in config.py; the HTTP/RPC client is in untis_client.py; pure date
+helpers are in time_utils.py and school_calendar.py; local file I/O is in
+storage.py. Each of those is a one-way import of config.py - no module here
+imports another back, so there's no import-order fragility.
 """
 
 import datetime as dt
 import json
 import logging
-import os
-from pathlib import Path
 
-log = logging.getLogger("scraper")
-
-UNTIS_HOST = os.environ.get("UNTIS_HOST", "le-bk-muenster.webuntis.com")
-UNTIS_SCHOOL = os.environ.get("UNTIS_SCHOOL", "le-bk-muenster")
-UNTIS_USER = os.environ.get("UNTIS_USER", "")
-UNTIS_PASS = os.environ.get("UNTIS_PASS", "")
-SUBJECT_FILTER = [s.strip() for s in os.environ.get("SUBJECT_FILTER", "").split(",") if s.strip()]
-DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
-
-# Re-exported for backward compat (tests + main.py reach these as scraper.X).
-from time_utils import _hm, week_bounds, current_week_id  # noqa: E402
-from school_calendar import _is_full_holiday_week, _is_between_school_years  # noqa: E402
-from storage import _dump_debug, _has_real_lessons  # noqa: E402
-from untis_client import (  # noqa: E402
+import config
+from time_utils import _hm, week_bounds, current_week_id
+from school_calendar import _is_full_holiday_week, _is_between_school_years
+from storage import _dump_debug, _has_real_lessons
+from untis_client import (
     ScrapeError,
     UntisClient,
     SCHOOL_YEAR_BOUNDARY_CODE,
     NO_ALLOWED_DATE_CODE,
 )
+
+log = logging.getLogger("scraper")
 
 
 def scrape_week(week_id: str) -> dict:
@@ -122,8 +109,8 @@ def scrape_week(week_id: str) -> dict:
             except ScrapeError:
                 log.warning("getSchoolyears failed for %s", week_id)
 
-        if SUBJECT_FILTER:
-            lessons = [l for l in lessons if l["subject"] in SUBJECT_FILTER]
+        if config.SUBJECT_FILTER:
+            lessons = [l for l in lessons if l["subject"] in config.SUBJECT_FILTER]
 
         for lesson in lessons:
             date = dt.date.fromisoformat(lesson["date"])
@@ -163,38 +150,38 @@ def scrape_week(week_id: str) -> dict:
     if not days:
         if unavailable:
             result["unavailable"] = True
-            out = DATA_DIR / f"{week_id}.json"
+            out = config.DATA_DIR / f"{week_id}.json"
             if _has_real_lessons(out):
                 log.info("%s already has real lesson data — not overwriting with unavailable marker", week_id)
             else:
-                DATA_DIR.mkdir(parents=True, exist_ok=True)
+                config.DATA_DIR.mkdir(parents=True, exist_ok=True)
                 out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
                 log.info("saved %s (beyond WebUntis publish horizon)", out)
             return result
         if holiday_periods and _is_full_holiday_week(monday, sunday, holiday_periods):
             result["holiday"] = True
-            DATA_DIR.mkdir(parents=True, exist_ok=True)
-            out = DATA_DIR / f"{week_id}.json"
+            config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+            out = config.DATA_DIR / f"{week_id}.json"
             out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
             log.info("saved %s (holiday week)", out)
             return result
         if school_years_list and _is_between_school_years(monday, sunday, school_years_list):
             result["holiday"] = True
-            out = DATA_DIR / f"{week_id}.json"
+            out = config.DATA_DIR / f"{week_id}.json"
             if _has_real_lessons(out):
                 log.info("%s already has real lesson data — not overwriting", week_id)
             else:
-                DATA_DIR.mkdir(parents=True, exist_ok=True)
+                config.DATA_DIR.mkdir(parents=True, exist_ok=True)
                 out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
                 log.info("saved %s (between school years, treated as holiday)", out)
             return result
         if school_year_boundary:
             result["schoolYearBoundary"] = True
-            out = DATA_DIR / f"{week_id}.json"
+            out = config.DATA_DIR / f"{week_id}.json"
             if _has_real_lessons(out):
                 log.info("%s already has real lesson data — not overwriting with school-year-boundary marker", week_id)
             else:
-                DATA_DIR.mkdir(parents=True, exist_ok=True)
+                config.DATA_DIR.mkdir(parents=True, exist_ok=True)
                 out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
                 log.info("saved %s (school-year boundary, not a confirmed holiday)", out)
             return result
@@ -204,19 +191,19 @@ def scrape_week(week_id: str) -> dict:
             # still worth surfacing honestly instead of pretending nothing
             # was ever scraped.
             result["allCancelled"] = True
-            out = DATA_DIR / f"{week_id}.json"
+            out = config.DATA_DIR / f"{week_id}.json"
             if _has_real_lessons(out):
                 log.info("%s already has real lesson data — not overwriting with allCancelled marker", week_id)
             else:
-                DATA_DIR.mkdir(parents=True, exist_ok=True)
+                config.DATA_DIR.mkdir(parents=True, exist_ok=True)
                 out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
                 log.info("saved %s (all periods cancelled, not a confirmed holiday)", out)
             return result
         log.info("no lessons in %s — nothing saved", week_id)
         return result
 
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out = DATA_DIR / f"{week_id}.json"
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out = config.DATA_DIR / f"{week_id}.json"
     out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
     log.info("saved %s (%d lessons)", out, sum(len(d["lessons"]) for d in days))
     return result

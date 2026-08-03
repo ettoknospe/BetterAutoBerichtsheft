@@ -1,23 +1,17 @@
-"""Local file I/O: debug dumps and the saved-week freshness check.
-
-_dump_debug reads DATA_DIR off the `scraper` module at call time (not at
-import time) so tests that do `monkeypatch.setattr(scraper, "DATA_DIR", ...)`
-keep working unchanged - see app/scraper.py for why this module and scraper
-import each other.
-"""
+"""Local file I/O: debug dumps and the saved-week freshness check."""
 
 import datetime as dt
 import json
 import logging
 from pathlib import Path
 
-import scraper as _scraper
+import config
 
 log = logging.getLogger("scraper")
 
 
 def _dump_debug(name: str, payload):
-    debug_dir = _scraper.DATA_DIR / "debug"
+    debug_dir = config.DATA_DIR / "debug"
     debug_dir.mkdir(parents=True, exist_ok=True)
     path = debug_dir / f"{dt.datetime.now():%Y%m%d-%H%M%S}-{name}.json"
     try:
