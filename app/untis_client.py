@@ -1,4 +1,15 @@
-"""WebUntis JSON-RPC + REST client."""
+"""WebUntis JSON-RPC + REST client.
+
+Flow:
+  1. JSON-RPC authenticate -> session cookie + personId
+  2. /WebUntis/api/token/new -> bearer token for REST endpoints
+  3. JSON-RPC getTimetable -> periods of the week
+  4. per period: REST calendar-entry/detail -> teachingContent (Lehrstoff)
+
+On unexpected API responses the raw payload is dumped to DATA_DIR/debug/
+(see storage.py) so a failing first run can be diagnosed without
+re-running blind.
+"""
 
 import datetime as dt
 import logging

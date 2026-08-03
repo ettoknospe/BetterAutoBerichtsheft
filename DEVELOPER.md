@@ -6,7 +6,7 @@ This document explains how to develop and maintain Berichtsheft.
 
 Berichtsheft is a web application. It gets teaching content from WebUntis. WebUntis is a school scheduling system.
 
-The app uses only HTTP and JSON-RPC. It does not use a browser. The app stores data as JSON files. One file stores data for each ISO week.
+The app uses only HTTP and JSON-RPC. The app stores data as JSON files. One file stores data for each ISO week.
 
 The app runs in a Docker container. It works on amd64 and arm64 computers.
 
@@ -16,7 +16,12 @@ The app runs in a Docker container. It works on amd64 and arm64 computers.
 berichtsheft/
 ├── app/
 │   ├── main.py              # FastAPI application and scheduler
-│   └── scraper.py           # WebUntis API client
+│   ├── scraper.py           # Orchestration: scrape_week() ties the rest together
+│   ├── config.py            # Runtime config read from the environment
+│   ├── untis_client.py      # WebUntis JSON-RPC + REST client (UntisClient, ScrapeError)
+│   ├── time_utils.py        # Pure time/week-id helpers
+│   ├── school_calendar.py   # Pure holiday/school-year gap detection
+│   └── storage.py           # Local file I/O: debug dumps, saved-week checks
 ├── static/                  # HTML, CSS, JavaScript
 ├── tests/                   # Test files
 ├── data/                    # JSON data (one file per week)
@@ -309,7 +314,7 @@ docker run --rm \
   -v "$PWD/tests":/srv/tests \
   -v "$PWD/pytest.ini":/srv/pytest.ini \
   --entrypoint bash \
-  berichtsheft-berichtsheft \
+  bab2-berichtsheft \
   -c "pip install -q pytest==8.3.4 httpx==0.28.1 && cd /srv && pytest -q"
 ```
 
@@ -359,8 +364,8 @@ def health():
 
 ### Add Scraper Logic
 
-1. Add the function to `app/scraper.py`
-2. Use the `UntisClient` class to make WebUntis API calls
+1. Add the function to `app/scraper.py` (orchestration) or `app/untis_client.py` (a new WebUntis API call)
+2. Use the `UntisClient` class (`app/untis_client.py`) to make WebUntis API calls
 3. Handle `ScrapeError` exceptions
 4. Add tests in `tests/test_scraper.py`
 

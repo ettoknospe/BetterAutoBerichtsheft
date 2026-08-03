@@ -1,19 +1,11 @@
-"""WebUntis scraper - plain HTTP, no browser.
+"""WebUntis scraper orchestration.
 
-Flow:
-  1. JSON-RPC authenticate -> session cookie + personId
-  2. /WebUntis/api/token/new -> bearer token for REST endpoints
-  3. JSON-RPC getTimetable -> periods of the week
-  4. per period: REST calendar-entry/detail -> teachingContent (Lehrstoff)
-
-On unexpected API responses the raw payload is dumped to DATA_DIR/debug/
-so a failing first run can be diagnosed without re-running blind.
-
-Module layout: this file owns orchestration (scrape_week). Runtime config
-lives in config.py; the HTTP/RPC client is in untis_client.py; pure date
-helpers are in time_utils.py and school_calendar.py; local file I/O is in
-storage.py. Each of those is a one-way import of config.py - no module here
-imports another back, so there's no import-order fragility.
+scrape_week() ties together the HTTP/RPC client (untis_client.py), pure
+date helpers (time_utils.py, school_calendar.py), and local file I/O
+(storage.py) to produce and persist one ISO week's lesson data. Runtime
+config lives in config.py; each of the split-out modules does a one-way
+`import config` - no module here imports another back, so there's no
+import-order fragility.
 """
 
 import datetime as dt
