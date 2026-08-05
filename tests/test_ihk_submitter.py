@@ -119,6 +119,38 @@ def test_load_status_survives_corrupt_file(fake_ihk):
     assert ihk_submitter.load_status() == {}
 
 
+def test_save_local_fields_round_trips(fake_ihk):
+    entry = ihk_submitter.save_local_fields("2026-W29", "worked on X", "training Y")
+    assert entry["ausbinhalt1"] == "worked on X"
+    assert entry["ausbinhalt2"] == "training Y"
+    assert "savedAt" in entry
+    assert ihk_submitter.load_local_fields()["2026-W29"]["ausbinhalt1"] == "worked on X"
+
+
+def test_save_local_fields_preserves_field_when_omitted(fake_ihk):
+    ihk_submitter.save_local_fields("2026-W29", "worked on X", "training Y")
+    ihk_submitter.save_local_fields("2026-W29", "worked on X v2", None)
+    entry = ihk_submitter.load_local_fields()["2026-W29"]
+    assert entry["ausbinhalt1"] == "worked on X v2"
+    assert entry["ausbinhalt2"] == "training Y"  # untouched, not wiped by the omitted arg
+
+
+def test_save_local_fields_is_noop_when_both_none(fake_ihk):
+    ihk_submitter.save_local_fields("2026-W29", None, None)
+    assert not (fake_ihk / "ihk_fields.json").exists()
+
+
+def test_load_local_fields_round_trips(fake_ihk):
+    assert ihk_submitter.load_local_fields() == {}
+    (fake_ihk / "ihk_fields.json").write_text(json.dumps({"2026-W29": {"ausbinhalt1": "a", "ausbinhalt2": "b"}}))
+    assert ihk_submitter.load_local_fields() == {"2026-W29": {"ausbinhalt1": "a", "ausbinhalt2": "b"}}
+
+
+def test_load_local_fields_survives_corrupt_file(fake_ihk):
+    (fake_ihk / "ihk_fields.json").write_text("not json")
+    assert ihk_submitter.load_local_fields() == {}
+
+
 def test_save_entry_raises_if_save_does_not_actually_persist(monkeypatch):
     """Regression test for the real bug found while building this feature:
     a save can return HTTP 200 and echo the submitted text back without

@@ -83,6 +83,47 @@ def load_status() -> dict:
         return {}
 
 
+def save_local_fields(week_id: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None) -> dict:
+    """Remember what was typed into ausbinhalt1/ausbinhalt2 for week_id, in
+    data/ihk_fields.json - purely this app's own local memory of its own
+    prior input, NOT fetched from IHK (one-way flow stays intact, see
+    sync_status()'s docstring). Only called after a submit to IHK actually
+    succeeds.
+
+    A None argument means "not specified in this submit" (see submit_week/
+    save_entry) - the previously-remembered value for that field is left
+    untouched, same as it's left untouched on the real IHK entry. If both
+    are None, this is a no-op: don't create/touch an entry for a week that
+    never used these fields."""
+    if ausbinhalt1 is None and ausbinhalt2 is None:
+        return load_local_fields().get(week_id, {})
+
+    fields = load_local_fields()
+    entry = dict(fields.get(week_id, {"ausbinhalt1": "", "ausbinhalt2": ""}))
+    if ausbinhalt1 is not None:
+        entry["ausbinhalt1"] = ausbinhalt1
+    if ausbinhalt2 is not None:
+        entry["ausbinhalt2"] = ausbinhalt2
+    entry["savedAt"] = dt.datetime.now().isoformat(timespec="seconds")
+    fields[week_id] = entry
+
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out = config.DATA_DIR / "ihk_fields.json"
+    out.write_text(json.dumps(fields, indent=2, ensure_ascii=False))
+    return entry
+
+
+def load_local_fields() -> dict:
+    """Read the locally-remembered ausbinhalt1/2 map, or {} if none saved yet."""
+    path = config.DATA_DIR / "ihk_fields.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return {}
+
+
 def submit_week(week_id: str, formatted_text: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None):
     """Find (or create, if it's the next sequential missing one) the IHK
     entry for week_id, and save formatted_text into its "Berufsschule"

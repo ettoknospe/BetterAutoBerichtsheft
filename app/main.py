@@ -80,7 +80,7 @@ def scrape(req: ScrapeRequest):
 
 @app.get("/api/ihk-status")
 def ihk_status():
-    return ihk_submitter.load_status()
+    return {"status": ihk_submitter.load_status(), "fields": ihk_submitter.load_local_fields()}
 
 
 @app.post("/api/submit-ihk")
@@ -93,6 +93,7 @@ def submit_ihk(req: SubmitIhkRequest):
         raise HTTPException(409, "submit already running")
     try:
         ihk_submitter.submit_week(req.week, req.text, req.ausbinhalt1, req.ausbinhalt2)
+        _save_local_fields_best_effort(req)
         _sync_ihk_status_best_effort()
         return {"ok": True}
     except IhkError as e:
@@ -102,6 +103,13 @@ def submit_ihk(req: SubmitIhkRequest):
         raise HTTPException(500, f"IHK submit failed: {e}")
     finally:
         submit_lock.release()
+
+
+def _save_local_fields_best_effort(req: SubmitIhkRequest):
+    try:
+        ihk_submitter.save_local_fields(req.week, req.ausbinhalt1, req.ausbinhalt2)
+    except Exception:
+        log.exception("saving local IHK fields failed (non-fatal)")
 
 
 def _sync_ihk_status_best_effort():
