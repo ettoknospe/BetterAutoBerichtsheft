@@ -11,7 +11,9 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import ihk_submitter
 import scraper
+from ihk_client import IhkError
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("app")
@@ -25,10 +27,18 @@ _SCRAPE_HOUR, _SCRAPE_MINUTE = (int(x) for x in SCRAPE_TIME.split(":"))
 
 app = FastAPI(title="Berichtsheft")
 scrape_lock = threading.Lock()
+submit_lock = threading.Lock()
 
 
 class ScrapeRequest(BaseModel):
     week: str | None = None
+
+
+class SubmitIhkRequest(BaseModel):
+    week: str
+    text: str
+    ausbinhalt1: str | None = None
+    ausbinhalt2: str | None = None
 
 
 @app.get("/api/weeks")
@@ -56,7 +66,9 @@ def scrape(req: ScrapeRequest):
     if not scrape_lock.acquire(blocking=False):
         raise HTTPException(409, "scrape already running")
     try:
-        return scraper.scrape_week(week_id)
+        result = scraper.scrape_week(week_id)
+        _sync_ihk_status_best_effort()
+        return result
     except scraper.ScrapeError as e:
         raise HTTPException(502, str(e))
     except Exception as e:
@@ -64,6 +76,39 @@ def scrape(req: ScrapeRequest):
         raise HTTPException(500, f"scrape failed: {e}")
     finally:
         scrape_lock.release()
+
+
+@app.get("/api/ihk-status")
+def ihk_status():
+    return ihk_submitter.load_status()
+
+
+@app.post("/api/submit-ihk")
+def submit_ihk(req: SubmitIhkRequest):
+    if not WEEK_RE.match(req.week):
+        raise HTTPException(400, "bad week id, expected YYYY-Www")
+    if not req.text.strip():
+        raise HTTPException(400, "text is empty")
+    if not submit_lock.acquire(blocking=False):
+        raise HTTPException(409, "submit already running")
+    try:
+        ihk_submitter.submit_week(req.week, req.text, req.ausbinhalt1, req.ausbinhalt2)
+        _sync_ihk_status_best_effort()
+        return {"ok": True}
+    except IhkError as e:
+        raise HTTPException(502, str(e))
+    except Exception as e:
+        log.exception("IHK submit failed")
+        raise HTTPException(500, f"IHK submit failed: {e}")
+    finally:
+        submit_lock.release()
+
+
+def _sync_ihk_status_best_effort():
+    try:
+        ihk_submitter.sync_status()
+    except Exception:
+        log.exception("IHK status sync failed (non-fatal)")
 
 
 def _scrape_due(now: dt.datetime, last_run_date) -> bool:
@@ -87,6 +132,7 @@ def _scheduled_scrape(today=None):
             scraper.scrape_week(week_id)
         except Exception:
             log.exception("scheduled scrape of %s failed", week_id)
+    _sync_ihk_status_best_effort()
 
 
 def scheduler():

@@ -4,8 +4,10 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+import ihk_submitter
 import main
 import scraper
+from ihk_client import IhkError
 
 client = TestClient(main.app)
 
@@ -164,3 +166,111 @@ def test_scheduled_scrape_still_attempts_second_week_if_first_fails(monkeypatch)
     monkeypatch.setattr(scraper, "scrape_week", fake_scrape_week)
     main._scheduled_scrape(dt.date(2026, 8, 2))  # must not raise
     assert calls == ["2026-W30", "2026-W31"]
+
+
+def test_ihk_status_returns_load_status(monkeypatch):
+    monkeypatch.setattr(ihk_submitter, "load_status", lambda: {"2026-W29": {"lfdnr": 42, "status": "genehmigt"}})
+    r = client.get("/api/ihk-status")
+    assert r.status_code == 200
+    assert r.json() == {"2026-W29": {"lfdnr": 42, "status": "genehmigt"}}
+
+
+def test_submit_ihk_bad_week_format():
+    r = client.post("/api/submit-ihk", json={"week": "bad", "text": "hi"})
+    assert r.status_code == 400
+
+
+def test_submit_ihk_rejects_empty_text():
+    r = client.post("/api/submit-ihk", json={"week": "2026-W29", "text": "   "})
+    assert r.status_code == 400
+
+
+def test_submit_ihk_success(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        ihk_submitter,
+        "submit_week",
+        lambda week_id, text, ausbinhalt1=None, ausbinhalt2=None: calls.append(
+            (week_id, text, ausbinhalt1, ausbinhalt2)
+        ),
+    )
+    r = client.post("/api/submit-ihk", json={"week": "2026-W29", "text": "the text"})
+    assert r.status_code == 200
+    assert r.json() == {"ok": True}
+    assert calls == [("2026-W29", "the text", None, None)]
+
+
+def test_submit_ihk_passes_through_ausbinhalt1_and_2(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        ihk_submitter,
+        "submit_week",
+        lambda week_id, text, ausbinhalt1=None, ausbinhalt2=None: calls.append(
+            (week_id, text, ausbinhalt1, ausbinhalt2)
+        ),
+    )
+    r = client.post(
+        "/api/submit-ihk",
+        json={"week": "2026-W29", "text": "the text", "ausbinhalt1": "worked on X", "ausbinhalt2": "training Y"},
+    )
+    assert r.status_code == 200
+    assert calls == [("2026-W29", "the text", "worked on X", "training Y")]
+
+
+def test_submit_ihk_error_maps_to_502(monkeypatch):
+    def raiser(week_id, text, ausbinhalt1=None, ausbinhalt2=None):
+        raise IhkError("ihk said no")
+
+    monkeypatch.setattr(ihk_submitter, "submit_week", raiser)
+    r = client.post("/api/submit-ihk", json={"week": "2026-W29", "text": "the text"})
+    assert r.status_code == 502
+
+
+def test_submit_ihk_unexpected_exception_maps_to_500(monkeypatch):
+    def raiser(week_id, text, ausbinhalt1=None, ausbinhalt2=None):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(ihk_submitter, "submit_week", raiser)
+    r = client.post("/api/submit-ihk", json={"week": "2026-W29", "text": "the text"})
+    assert r.status_code == 500
+
+
+def test_submit_ihk_returns_409_when_already_running():
+    assert main.submit_lock.acquire(blocking=False)
+    try:
+        r = client.post("/api/submit-ihk", json={"week": "2026-W29", "text": "the text"})
+        assert r.status_code == 409
+    finally:
+        main.submit_lock.release()
+
+
+def test_scrape_success_also_syncs_ihk_status_best_effort(monkeypatch):
+    monkeypatch.setattr(scraper, "scrape_week", lambda week_id: {"week": week_id})
+    synced = []
+    monkeypatch.setattr(ihk_submitter, "sync_status", lambda: synced.append(True))
+    r = client.post("/api/scrape", json={"week": "2026-W29"})
+    assert r.status_code == 200
+    assert synced == [True]
+
+
+def test_scrape_succeeds_even_if_ihk_status_sync_fails(monkeypatch):
+    monkeypatch.setattr(scraper, "scrape_week", lambda week_id: {"week": week_id})
+
+    def raiser():
+        raise RuntimeError("ihk portal unreachable")
+
+    monkeypatch.setattr(ihk_submitter, "sync_status", raiser)
+    r = client.post("/api/scrape", json={"week": "2026-W29"})
+    assert r.status_code == 200  # best-effort: sync failure must not break the scrape response
+
+
+
+def test_submit_ihk_success_also_syncs_ihk_status_best_effort(monkeypatch):
+    monkeypatch.setattr(
+        ihk_submitter, "submit_week", lambda week_id, text, ausbinhalt1=None, ausbinhalt2=None: None
+    )
+    synced = []
+    monkeypatch.setattr(ihk_submitter, "sync_status", lambda: synced.append(True))
+    r = client.post("/api/submit-ihk", json={"week": "2026-W29", "text": "the text"})
+    assert r.status_code == 200
+    assert synced == [True]
