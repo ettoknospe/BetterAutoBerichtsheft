@@ -4,6 +4,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+import config
 import ihk_submitter
 import main
 import scraper
@@ -15,6 +16,11 @@ client = TestClient(main.app)
 @pytest.fixture
 def data_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "DATA_DIR", tmp_path)
+    # ihk_submitter reads/writes via config.DATA_DIR, a separate variable -
+    # patch both so any real (non-monkeypatched) ihk_submitter call in a
+    # test (e.g. save_local_fields, piggybacked on a successful submit)
+    # never touches the real /data on disk.
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     return tmp_path
 
 
@@ -170,9 +176,13 @@ def test_scheduled_scrape_still_attempts_second_week_if_first_fails(monkeypatch)
 
 def test_ihk_status_returns_load_status(monkeypatch):
     monkeypatch.setattr(ihk_submitter, "load_status", lambda: {"2026-W29": {"lfdnr": 42, "status": "genehmigt"}})
+    monkeypatch.setattr(ihk_submitter, "load_local_fields", lambda: {"2026-W29": {"ausbinhalt1": "x"}})
     r = client.get("/api/ihk-status")
     assert r.status_code == 200
-    assert r.json() == {"2026-W29": {"lfdnr": 42, "status": "genehmigt"}}
+    assert r.json() == {
+        "status": {"2026-W29": {"lfdnr": 42, "status": "genehmigt"}},
+        "fields": {"2026-W29": {"ausbinhalt1": "x"}},
+    }
 
 
 def test_submit_ihk_bad_week_format():
@@ -185,7 +195,7 @@ def test_submit_ihk_rejects_empty_text():
     assert r.status_code == 400
 
 
-def test_submit_ihk_success(monkeypatch):
+def test_submit_ihk_success(monkeypatch, data_dir):
     calls = []
     monkeypatch.setattr(
         ihk_submitter,
@@ -200,7 +210,7 @@ def test_submit_ihk_success(monkeypatch):
     assert calls == [("2026-W29", "the text", None, None)]
 
 
-def test_submit_ihk_passes_through_ausbinhalt1_and_2(monkeypatch):
+def test_submit_ihk_passes_through_ausbinhalt1_and_2(monkeypatch, data_dir):
     calls = []
     monkeypatch.setattr(
         ihk_submitter,
@@ -265,7 +275,7 @@ def test_scrape_succeeds_even_if_ihk_status_sync_fails(monkeypatch):
 
 
 
-def test_submit_ihk_success_also_syncs_ihk_status_best_effort(monkeypatch):
+def test_submit_ihk_success_also_syncs_ihk_status_best_effort(monkeypatch, data_dir):
     monkeypatch.setattr(
         ihk_submitter, "submit_week", lambda week_id, text, ausbinhalt1=None, ausbinhalt2=None: None
     )
@@ -274,3 +284,52 @@ def test_submit_ihk_success_also_syncs_ihk_status_best_effort(monkeypatch):
     r = client.post("/api/submit-ihk", json={"week": "2026-W29", "text": "the text"})
     assert r.status_code == 200
     assert synced == [True]
+
+
+def test_submit_ihk_success_also_saves_local_fields_best_effort(monkeypatch, data_dir):
+    monkeypatch.setattr(
+        ihk_submitter, "submit_week", lambda week_id, text, ausbinhalt1=None, ausbinhalt2=None: None
+    )
+    monkeypatch.setattr(ihk_submitter, "sync_status", lambda: None)
+    saved = []
+    monkeypatch.setattr(
+        ihk_submitter,
+        "save_local_fields",
+        lambda week_id, ausbinhalt1=None, ausbinhalt2=None: saved.append((week_id, ausbinhalt1, ausbinhalt2)),
+    )
+    r = client.post(
+        "/api/submit-ihk",
+        json={"week": "2026-W29", "text": "the text", "ausbinhalt1": "worked on X", "ausbinhalt2": "training Y"},
+    )
+    assert r.status_code == 200
+    assert saved == [("2026-W29", "worked on X", "training Y")]
+
+
+def test_submit_ihk_succeeds_even_if_local_fields_save_fails(monkeypatch, data_dir):
+    monkeypatch.setattr(
+        ihk_submitter, "submit_week", lambda week_id, text, ausbinhalt1=None, ausbinhalt2=None: None
+    )
+    monkeypatch.setattr(ihk_submitter, "sync_status", lambda: None)
+
+    def raiser(week_id, ausbinhalt1=None, ausbinhalt2=None):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(ihk_submitter, "save_local_fields", raiser)
+    r = client.post("/api/submit-ihk", json={"week": "2026-W29", "text": "the text"})
+    assert r.status_code == 200  # best-effort: local-save failure must not break the submit response
+
+
+def test_submit_ihk_then_ihk_status_reflects_local_fields(monkeypatch, data_dir):
+    monkeypatch.setattr(
+        ihk_submitter, "submit_week", lambda week_id, text, ausbinhalt1=None, ausbinhalt2=None: None
+    )
+    monkeypatch.setattr(ihk_submitter, "sync_status", lambda: None)
+    r = client.post(
+        "/api/submit-ihk",
+        json={"week": "2026-W29", "text": "the text", "ausbinhalt1": "worked on X", "ausbinhalt2": "training Y"},
+    )
+    assert r.status_code == 200
+
+    r = client.get("/api/ihk-status")
+    assert r.json()["fields"]["2026-W29"]["ausbinhalt1"] == "worked on X"
+    assert r.json()["fields"]["2026-W29"]["ausbinhalt2"] == "training Y"

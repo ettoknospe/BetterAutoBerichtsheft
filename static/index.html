@@ -73,7 +73,11 @@ let weeks = [];          // weeks with data
 let selected = null;     // "2026-W29"
 let weekData = null;
 let currentWeek = null;  // this ISO week, per the server
-let ihkStatus = {};      // week_id -> {lfdnr, status, syncedAt}, from /api/ihk-status
+let ihkStatus = {};      // week_id -> {lfdnr, status, syncedAt}, from /api/ihk-status's "status"
+// week_id -> {ausbinhalt1, ausbinhalt2, savedAt} - THIS APP'S OWN memory of what
+// it last typed+submitted, from /api/ihk-status's "fields". Never fetched from
+// the IHK portal - data still flows one-way, this site -> IHK (see loadWeek()).
+let ihkFieldsCache = {};
 let ihkFields = { ausbinhalt1: "", ausbinhalt2: "" };  // pre-fill for the current week's editable fields
 let ihkHistory = {};     // week_id -> {lfdnr, status, ausbinhalt1, ausbinhalt2, scrapedAt}, one-time archive from /api/ihk-history - genehmigt weeks only, read-only display
 
@@ -334,12 +338,15 @@ async function loadWeek(id) {
   if (id !== selected) setStatus("");
   selected = id;
   weekData = null;
-  // Always blank - data flows one-way, this site -> IHK. Never read
-  // content back from the portal to show/pre-fill here (see
-  // sync_status()'s docstring). Leaving a field blank and submitting
-  // sends it as "not specified" so the existing value on IHK is
-  // preserved untouched, not fetched-then-echoed.
-  ihkFields = { ausbinhalt1: "", ausbinhalt2: "" };
+  // Pre-fill from OUR OWN local record of what was last typed+submitted for
+  // this week (ihkFieldsCache) - NOT fetched from the IHK portal. Data still
+  // flows one-way, this site -> IHK: we never read ausbinhalt1/2 content back
+  // FROM tibrosBB (see sync_status()'s docstring). ihkFieldsCache is purely
+  // local memory of this app's own input, written server-side by
+  // save_local_fields() only after a submit to IHK actually succeeds -
+  // distinct from ihkStatus, which stays portal-truth-only.
+  const cached = ihkFieldsCache[id];
+  ihkFields = { ausbinhalt1: cached?.ausbinhalt1 ?? "", ausbinhalt2: cached?.ausbinhalt2 ?? "" };
   const res = await fetch(`/api/weeks/${id}`);
   if (res.ok) weekData = await res.json();
   renderSelect();
@@ -356,7 +363,9 @@ async function refreshWeeks() {
 
 async function refreshIhkStatus() {
   const res = await fetch("/api/ihk-status");
-  ihkStatus = res.ok ? await res.json() : {};
+  const data = res.ok ? await res.json() : { status: {}, fields: {} };
+  ihkStatus = data.status || {};
+  ihkFieldsCache = data.fields || {};
 }
 
 async function refreshIhkHistory() {
