@@ -83,6 +83,11 @@ def ihk_status():
     return ihk_submitter.load_status()
 
 
+@app.get("/api/ihk-history")
+def ihk_history():
+    return ihk_submitter.load_history()
+
+
 @app.post("/api/submit-ihk")
 def submit_ihk(req: SubmitIhkRequest):
     if not WEEK_RE.match(req.week):

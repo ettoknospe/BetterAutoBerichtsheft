@@ -83,6 +83,19 @@ def load_status() -> dict:
         return {}
 
 
+def load_history() -> dict:
+    """Read the one-time archived ausbinhalt1/2 content per week, or {} if
+    the backfill has never been run. See backfill_ihk_history.py - this is a
+    static snapshot, not kept in sync automatically."""
+    path = config.DATA_DIR / "ihk_history.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError:
+        return {}
+
+
 def submit_week(week_id: str, formatted_text: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None):
     """Find (or create, if it's the next sequential missing one) the IHK
     entry for week_id, and save formatted_text into its "Berufsschule"

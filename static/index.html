@@ -75,6 +75,7 @@ let weekData = null;
 let currentWeek = null;  // this ISO week, per the server
 let ihkStatus = {};      // week_id -> {lfdnr, status, syncedAt}, from /api/ihk-status
 let ihkFields = { ausbinhalt1: "", ausbinhalt2: "" };  // pre-fill for the current week's editable fields
+let ihkHistory = {};     // week_id -> {lfdnr, status, ausbinhalt1, ausbinhalt2, scrapedAt}, one-time archive from /api/ihk-history - genehmigt weeks only, read-only display
 
 const fmtDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
 const fmtShort = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
@@ -245,6 +246,12 @@ function renderWeek() {
   // WebUntis has," useful even for a locked, historical week.
   if (text) {
     const showForm = ihkState !== "hidden";
+    // A genehmigt (locked) week can't be edited/resubmitted anymore, so
+    // there's no pre-fill-before-submit risk here (see loadWeek()'s
+    // one-way-flow note, which still applies to the editable form above) -
+    // this only ever shows the one-time archived snapshot from
+    // backfill_ihk_history.py, not a live IHK fetch.
+    const hist = !showForm ? ihkHistory[selected] : null;
     el.insertAdjacentHTML("afterbegin", `
       <div class="summary ihk-form">
         ${showForm ? `
@@ -254,6 +261,13 @@ function renderWeek() {
           <label for="ihkField2">Unterweisungen, betrieblicher Unterricht, sonstige Schulungen</label>
           <textarea id="ihkField2" rows="4"></textarea>
           <label for="berufsschuleText">Berufsschule</label>
+        ` : hist ? `
+          <h2>IHK-Eintrag (genehmigt, archiviert)</h2>
+          <label>Betriebliche Tätigkeiten</label>
+          <pre id="ihkHist1"></pre>
+          <label>Unterweisungen, betrieblicher Unterricht, sonstige Schulungen</label>
+          <pre id="ihkHist2"></pre>
+          <label for="berufsschuleText">Berufsschule</label>
         ` : `<h2>Berufsschule</h2>`}
         <pre id="berufsschuleText"></pre>
       </div>`);
@@ -261,6 +275,9 @@ function renderWeek() {
     if (showForm) {
       $("ihkField1").value = ihkFields.ausbinhalt1;
       $("ihkField2").value = ihkFields.ausbinhalt2;
+    } else if (hist) {
+      $("ihkHist1").textContent = hist.ausbinhalt1 || "–";
+      $("ihkHist2").textContent = hist.ausbinhalt2 || "–";
     }
     $("copyBtn").hidden = false;
     $("copyBtn").onclick = async () => {
@@ -342,6 +359,11 @@ async function refreshIhkStatus() {
   ihkStatus = res.ok ? await res.json() : {};
 }
 
+async function refreshIhkHistory() {
+  const res = await fetch("/api/ihk-history");
+  ihkHistory = res.ok ? await res.json() : {};
+}
+
 $("prev").onclick = () => loadWeek(shiftWeek(selected, -1));
 $("next").onclick = () => loadWeek(shiftWeek(selected, 1));
 $("weekSelect").onchange = (e) => loadWeek(e.target.value);
@@ -372,6 +394,7 @@ $("scrapeBtn").onclick = async () => {
 (async () => {
   const current = await refreshWeeks();
   await refreshIhkStatus();
+  await refreshIhkHistory();
   await loadWeek(weeks.includes(current) ? current : (weeks.at(-1) || current));
 })();
 </script>
