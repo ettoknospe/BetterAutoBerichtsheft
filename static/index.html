@@ -18,6 +18,7 @@
   .nav { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
   .nav button, .actions button { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: .45rem .8rem; font-size: 1rem; cursor: pointer; }
   .nav button:hover, .actions button:hover { border-color: var(--accent); }
+  .nav button:disabled { opacity: .5; cursor: not-allowed; }
   .nav select { flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: .45rem .6rem; font-size: 1rem; }
   .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
   .actions { display: flex; gap: .5rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
@@ -170,6 +171,12 @@ function renderWeek() {
     ? `${fmtShort(s)} – ${fmtShort(e)} · Abgerufen am: ${new Date(weekData.scrapedAt).toLocaleString("de-DE")}`
     : `${fmtShort(s)} – ${fmtShort(e)}`;
   renderIhkBadge();
+
+  // Can navigate forward up to the latest (current) ISO week, never past
+  // it - there's nothing to show beyond "now" (string comparison works
+  // here since week ids are always zero-padded YYYY-Www, same as the
+  // ihkState future-week check below).
+  $("next").disabled = !currentWeek || selected >= currentWeek;
 
   // A genehmigt week is done and in the past - it can't change anymore,
   // so re-scraping it is pointless. Hide the button rather than let
