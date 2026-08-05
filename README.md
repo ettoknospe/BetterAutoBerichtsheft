@@ -46,6 +46,18 @@ copy-paste it there by hand.
   yellow, locked), or *nicht genehmigt* (needs correction — red, still editable).
   Status is refreshed after every scrape and every submit, never on plain navigation.
 
+### One-time history backfill
+
+Genehmigt (locked) weeks can't be resubmitted, so it's safe to show their real
+submitted text — run this once, on whichever machine holds your `data/`
+volume (dev machine or Pi), to archive every existing IHK entry's
+`ausbinhalt1`/`ausbinhalt2` into `data/ihk_history.json`. Without it, locked
+weeks in the viewer only show the Berufsschule text, not the archived entry:
+
+```bash
+docker compose run --rm --entrypoint python berichtsheft app/backfill_ihk_history.py
+```
+
 ## How scraping works
 
 1. JSON-RPC `authenticate` → session + personId
