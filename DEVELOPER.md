@@ -6,7 +6,9 @@ This document explains how to develop and maintain Berichtsheft.
 
 Berichtsheft is a web application. It gets teaching content from WebUntis. WebUntis is a school scheduling system.
 
-The app uses only HTTP and JSON-RPC. The app stores data as JSON files. One file stores data for each ISO week.
+The app can also send that teaching content to the IHK apprenticeship logbook portal (tibrosBB). This saves you from copy-pasting it there by hand.
+
+The app uses only HTTP and JSON-RPC. No browser automation (no Playwright, no Selenium) for either WebUntis or IHK. The app stores data as JSON files. One file stores data for each ISO week.
 
 The app runs in a Docker container. It works on amd64 and arm64 computers.
 
@@ -21,7 +23,9 @@ berichtsheft/
 │   ├── untis_client.py      # WebUntis JSON-RPC + REST client (UntisClient, ScrapeError)
 │   ├── time_utils.py        # Pure time/week-id helpers
 │   ├── school_calendar.py   # Pure holiday/school-year gap detection
-│   └── storage.py           # Local file I/O: debug dumps, saved-week checks
+│   ├── storage.py           # Local file I/O: debug dumps, saved-week checks
+│   ├── ihk_client.py        # IHK tibrosBB portal client (IhkClient, IhkError)
+│   └── ihk_submitter.py     # IHK orchestration: submit_week(), sync_status()
 ├── static/                  # HTML, CSS, JavaScript
 ├── tests/                   # Test files
 ├── data/                    # JSON data (one file per week)
@@ -47,6 +51,15 @@ cp .env.example .env
 UNTIS_USER=your-username
 UNTIS_PASS=your-password
 ```
+
+If you also want to submit to IHK, add your IHK tibrosBB login too:
+
+```
+IHK_USER=your-ihk-username
+IHK_PASS=your-ihk-password
+```
+
+This is optional. Without it, the app still scrapes and shows WebUntis data — the "Bei IHK einreichen" button just does not work.
 
 3. Build the Docker image:
 
@@ -96,6 +109,32 @@ For each lesson, the app sends HTTP GET to `/WebUntis/api/rest/view/v2/calendar-
 
 If WebUntis returns an unexpected response, the app saves the raw response to `data/debug/`. This helps you diagnose problems.
 
+## How IHK Submission Works
+
+The IHK tibrosBB portal is an old-style website (JSP/Tomcat), not a REST API. The app talks to it with plain HTTP requests, the same way a web browser would, but without running any JavaScript.
+
+### Step 1: Login
+
+The app sends a POST request with your username and password. The portal replies with a session cookie.
+
+### Step 2: List Existing Entries
+
+The app requests the portal's own week list page. This tells the app which weeks already have an entry, and whether each one is locked ("genehmigt" = approved).
+
+This step must always happen before looking at one specific week's entry. Skipping it makes the portal reject the next request, even though you are still logged in.
+
+### Step 3: Find or Create the Right Entry
+
+- If the week already has an entry and it is not locked, the app reuses it.
+- If the week has no entry yet, the app can only create one for the **next** week in order. The portal has no "create week X" option — it always creates whatever week comes next. You cannot skip ahead.
+- Clicking "create new entry" does not save anything by itself. It only opens a blank form. The entry is not real until the next step saves it.
+
+### Step 4: Save
+
+The app fills in the form and submits it with the portal's "Speichern" (save) button. The app never clicks "Speichern & Senden" (save and send for approval) — sending the entry for approval is always something you do yourself, by hand, on the real portal website.
+
+After saving, the app requests the entry again and checks that the text really changed. A save can report success while silently doing nothing, so this check always happens.
+
 ## Configuration
 
 Set these values in `.env` or as environment variables:
@@ -110,6 +149,11 @@ Set these values in `.env` or as environment variables:
 | `SCRAPE_DAY` | `sun` | Day to auto-scrape (mon-sun, or `off`) |
 | `SCRAPE_TIME` | `18:00` | Time to auto-scrape (HH:MM format) |
 | `SUBJECT_FILTER` | (empty) | Comma-separated subject names to include. If empty, include all subjects. |
+| `IHK_USER` | (required for IHK) | Your IHK tibrosBB username |
+| `IHK_PASS` | (required for IHK) | Your IHK tibrosBB password |
+| `IHK_HOST` | `www.bildung-ihk-nordwestfalen.de` | IHK portal server name |
+| `IHK_AUSBABSCHNITT` | (empty) | Overrides the "Ausbildungsabschnitt" field on a brand-new entry. The portal normally fills this in itself. |
+| `IHK_AUSB_MAIL` | (empty) | Overrides the supervisor email field on a brand-new entry. The portal normally fills this in itself. |
 
 ### Use Subject Filter
 
@@ -204,6 +248,52 @@ If you do not send a `week` value, the app scrapes the current week.
 
 Only one scrape can run at a time. If a scrape is already running, return 409.
 
+### Get IHK Status
+
+**Request:**
+```
+GET /api/ihk-status
+```
+
+**Response:**
+```json
+{
+  "2026-W29": {
+    "lfdnr": 2774528,
+    "status": "in_bearbeitung",
+    "syncedAt": "2026-08-05T11:38:00"
+  }
+}
+```
+
+`status` is one of `in_bearbeitung` (editable), `genehmigt` (approved, locked), `warten_auf_genehmigung` (sent, awaiting approval, locked), `abgelehnt` (needs correction, editable), or `unknown`. This is a cached snapshot, refreshed after every scrape and every submit — it does not make a live IHK request.
+
+### Submit to IHK
+
+**Request:**
+```
+POST /api/submit-ihk
+Content-Type: application/json
+
+{
+  "week": "2026-W29",
+  "text": "the WebUntis Berufsschule text",
+  "ausbinhalt1": null,
+  "ausbinhalt2": null
+}
+```
+
+`ausbinhalt1` ("Betriebliche Tätigkeiten") and `ausbinhalt2` ("Unterweisungen, betrieblicher Unterricht, sonstige Schulungen") are optional. Leave them `null` to keep whatever is already saved on the real IHK site untouched.
+
+**Response:**
+```json
+{
+  "ok": true
+}
+```
+
+If the week is already `genehmigt` (locked), or the week has no entry yet and is not the very next one in sequence, this returns an error instead of saving. Only one submit can run at a time. If a submit is already running, return 409.
+
 ## Data Format
 
 The app saves each week as a JSON file:
@@ -249,6 +339,22 @@ These fields appear in the JSON when there are no lessons:
 | `"unavailable": true` | The week is too far in the future. WebUntis has not published data for this week yet. |
 | `"schoolYearBoundary": true` | The week spans two school years. The app could not get data. |
 | `"allCancelled": true` | All lessons in the week were cancelled. |
+
+### IHK Status File
+
+The app also keeps a small status file: `data/ihk_status.json`. It records which weeks already have an IHK entry, and whether each one is locked:
+
+```json
+{
+  "2026-W29": {
+    "lfdnr": 2774528,
+    "status": "in_bearbeitung",
+    "syncedAt": "2026-08-05T11:38:00"
+  }
+}
+```
+
+This file only stores status metadata (`lfdnr`, `status`, when it was last checked). It never stores the actual text content of an IHK entry — the app only ever writes text to IHK, never reads it back. This is on purpose: it keeps this app's own data and the real IHK site from ever silently disagreeing about what an entry says.
 
 ### Merging Lessons
 
@@ -332,8 +438,11 @@ Tests are in the `tests/` directory:
 | File | Tests |
 |------|-------|
 | `conftest.py` | Shared test setup and fixtures |
-| `test_scraper.py` | Scraper functions and error handling |
-| `test_api.py` | REST API endpoints |
+| `test_scraper.py` | Scraper functions and error handling (40 tests) |
+| `test_api.py` | REST API endpoints, including IHK routes (32 tests) |
+| `test_ihk_submitter.py` | IHK client and submit logic (15 tests) |
+
+87 tests total.
 
 ## Write New Code
 
@@ -368,6 +477,15 @@ def health():
 2. Use the `UntisClient` class (`app/untis_client.py`) to make WebUntis API calls
 3. Handle `ScrapeError` exceptions
 4. Add tests in `tests/test_scraper.py`
+
+### Add IHK Logic
+
+1. Add the function to `app/ihk_submitter.py` (orchestration) or `app/ihk_client.py` (a new portal call)
+2. Use the `IhkClient` class (`app/ihk_client.py`) to make IHK portal calls
+3. Handle `IhkError` exceptions
+4. Never call the portal's "Speichern & Senden" (send for approval) automatically — only "Speichern" (save)
+5. Never read entry content back from the portal to show it in this app's own UI — this app only ever writes to IHK
+6. Add tests in `tests/test_ihk_submitter.py`
 
 ## Common Problems
 
@@ -405,6 +523,30 @@ Check the WebUntis status page. If the server is down, wait and try again later.
 **Cause:** `SCRAPE_DAY` is wrong or set to `off`.
 
 **Fix:** Check your `.env`. Set `SCRAPE_DAY` to `sun` (or another day). Make sure `SCRAPE_TIME` is correct.
+
+### Problem: "IHK_USER / IHK_PASS not set"
+
+**Cause:** You did not set IHK login credentials.
+
+**Fix:** Edit `.env` and set `IHK_USER` and `IHK_PASS`. The "Bei IHK einreichen" button will not work without them.
+
+### Problem: "is already genehmigt (locked) - cannot submit"
+
+**Cause:** That week's IHK entry was already approved. Approved entries cannot be changed.
+
+**Fix:** Nothing to fix — this is expected. Pick a different week.
+
+### Problem: "has no entry and is not the next sequential week"
+
+**Cause:** You tried to submit a week further ahead than the next one IHK expects. The portal only ever lets you create the next week in order — it cannot skip ahead.
+
+**Fix:** Submit the earlier missing weeks first, one at a time, in order. The web UI already disables the button for a week you cannot submit yet and explains which week to submit first.
+
+### Problem: IHK button is missing for a week
+
+**Cause:** Either the week is already `genehmigt` (locked), or it is further in the future than the current week (nothing to report yet).
+
+**Fix:** Nothing to fix — this is expected. Check the status badge next to the week.
 
 ### Problem: Wrong timezone for scheduling
 

@@ -7,7 +7,7 @@
 <style>
   :root {
     --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73;
-    --accent: #0071e3; --border: #d2d2d7; --ok: #34c759; --err: #ff3b30;
+    --accent: #0071e3; --border: #d2d2d7; --ok: #34c759; --err: #ff3b30; --warn: #c9960c;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #161617; --card: #1d1d1f; --text: #f5f5f7; --muted: #86868b; --border: #3a3a3c; }
@@ -36,6 +36,15 @@
   .summary pre { white-space: pre-wrap; font: inherit; }
   #status { min-height: 1.4rem; font-size: .9rem; margin-bottom: 1rem; }
   #status.err { color: var(--err); } #status.ok { color: var(--ok); }
+  #ihkBadge { font-size: .8rem; margin-left: .5rem; }
+  #ihkBadge.genehmigt { color: var(--ok); }
+  #ihkBadge.eingetragen { color: var(--muted); }
+  #ihkBadge.warten { color: var(--warn); }
+  #ihkBadge.abgelehnt { color: var(--err); }
+  #ihkBtn:disabled { opacity: .5; cursor: not-allowed; }
+  .ihk-form label { display: block; font-size: .85rem; color: var(--muted); margin: .6rem 0 .3rem; }
+  .ihk-form label:first-of-type { margin-top: 0; }
+  .ihk-form textarea { width: 100%; min-height: 4.5rem; border: 1px solid var(--border); border-radius: 10px; padding: .5rem .6rem; font: inherit; background: var(--bg); color: var(--text); resize: vertical; }
   .placeholder { color: var(--muted); text-align: center; padding: 3rem 0; }
 </style>
 </head>
@@ -47,28 +56,25 @@
   <select id="weekSelect"></select>
   <button id="next" title="Woche vor">→</button>
 </div>
-<div class="meta" id="weekMeta"></div>
+<div class="meta"><span id="weekMeta"></span> <span id="ihkBadge"></span></div>
 
 <div class="actions">
   <button class="primary" id="scrapeBtn">Jetzt Abrufen</button>
   <button id="copyBtn" hidden>Text kopieren</button>
+  <button id="ihkBtn" hidden>Bei IHK einreichen</button>
 </div>
 <div id="status"></div>
 
 <div id="content"><div class="placeholder">Lade…</div></div>
-
-<template id="summaryTpl">
-  <div class="summary">
-    <h2>Formatierter Text</h2>
-    <pre></pre>
-  </div>
-</template>
 
 <script>
 const $ = (id) => document.getElementById(id);
 let weeks = [];          // weeks with data
 let selected = null;     // "2026-W29"
 let weekData = null;
+let currentWeek = null;  // this ISO week, per the server
+let ihkStatus = {};      // week_id -> {lfdnr, status, syncedAt}, from /api/ihk-status
+let ihkFields = { ausbinhalt1: "", ausbinhalt2: "" };  // pre-fill for the current week's editable fields
 
 const fmtDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
 const fmtShort = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
@@ -125,32 +131,64 @@ function formattedText(data) {
   return parts.join("\n\n");
 }
 
+const IHK_BADGE_LABELS = {
+  genehmigt: ["eingetragen und genehmigt", "genehmigt"],
+  in_bearbeitung: ["eingetragen", "eingetragen"],
+  warten_auf_genehmigung: ["Warte auf Genehmigung", "warten"],
+  abgelehnt: ["nicht genehmigt", "abgelehnt"],
+};
+
+function nextSubmittableWeek() {
+  const known = Object.keys(ihkStatus);
+  if (!known.length) return null;
+  return shiftWeek([...known].sort().at(-1), 1);
+}
+
+function renderIhkBadge() {
+  const badge = $("ihkBadge");
+  const entry = ihkStatus[selected];
+  const mapped = entry && IHK_BADGE_LABELS[entry.status];
+  if (!mapped) {
+    badge.textContent = "";
+    badge.className = "";
+    return;
+  }
+  const [label, cls] = mapped;
+  badge.textContent = `· IHK: ${label}`;
+  badge.className = cls;
+}
+
 function renderWeek() {
   const el = $("content");
   const [s, e] = weekBounds(selected);
   $("weekMeta").textContent = weekData
-    ? `${fmtShort(s)} – ${fmtShort(e)} · gescraped ${new Date(weekData.scrapedAt).toLocaleString("de-DE")}`
+    ? `${fmtShort(s)} – ${fmtShort(e)} · Abgerufen am: ${new Date(weekData.scrapedAt).toLocaleString("de-DE")}`
     : `${fmtShort(s)} – ${fmtShort(e)}`;
+  renderIhkBadge();
+
+  // A genehmigt week is done and in the past - it can't change anymore,
+  // so re-scraping it is pointless. Hide the button rather than let
+  // someone burn a WebUntis round-trip on a locked record.
+  const ihkEntry = ihkStatus[selected];
+  $("scrapeBtn").hidden = ihkEntry?.status === "genehmigt";
 
   if (!weekData) {
     el.innerHTML = `<div class="placeholder">Keine Daten für ${selected}.<br>„Jetzt scrapen" holt diese Woche aus WebUntis.</div>`;
     $("copyBtn").hidden = true;
+    $("ihkBtn").hidden = true;
     return;
   }
   if (weekData.unavailable) {
     el.innerHTML = `<div class="placeholder">Kann noch nicht abgerufen werden.<br>WebUntis hat diesen Zeitraum noch nicht freigegeben.</div>`;
     $("copyBtn").hidden = true;
+    $("ihkBtn").hidden = true;
     return;
   }
-  if (weekData.allCancelled) {
-    el.innerHTML = `<div class="placeholder">Alle Stunden in dieser Woche wurden abgesagt.</div>`;
-    $("copyBtn").hidden = true;
-    return;
-  }
-  const noSchedule = weekData.holiday || weekData.schoolYearBoundary;
+  const noSchedule = weekData.holiday || weekData.schoolYearBoundary || weekData.allCancelled;
   if (!noSchedule && !weekData.days.length) {
     el.innerHTML = `<div class="placeholder">Keine Stunden in dieser Woche gefunden.</div>`;
     $("copyBtn").hidden = true;
+    $("ihkBtn").hidden = true;
     return;
   }
   el.innerHTML = noSchedule ? "" : weekData.days.map((day) => `
@@ -167,11 +205,63 @@ function renderWeek() {
     ? "Schulferien"
     : weekData.schoolYearBoundary
     ? "Wahrscheinlich Schuljahrwechsel"
+    : weekData.allCancelled
+    ? "Alle Stunden abgesagt"
     : formattedText(weekData);
+
+  // Only offer IHK submission where it can actually succeed. A week is
+  // submittable if it already has an entry that isn't locked - genehmigt
+  // (approved, final) or warten_auf_genehmigung (sent, under review, not
+  // yours to edit while pending) both block editing - or if it's exactly
+  // the next sequential week "Neuer Eintrag" would create; it can never
+  // target an arbitrary week or skip ahead. Weeks further into the
+  // backlog get a disabled button explaining why, instead of just
+  // failing after a click.
+  const nextWeek = nextSubmittableWeek();
+  let ihkState, ihkReason;
+  if (selected > currentWeek) {
+    ihkState = "hidden"; // future week - nothing to report yet, IHK can't take it
+  } else if (ihkEntry) {
+    if (ihkEntry.status === "genehmigt") {
+      ihkState = "hidden";
+    } else if (ihkEntry.status === "warten_auf_genehmigung") {
+      ihkState = "disabled";
+      ihkReason = "Wartet auf Genehmigung durch Betreuer";
+    } else {
+      ihkState = "enabled"; // in_bearbeitung, abgelehnt (Korrektur möglich), unknown
+    }
+  } else if (selected === nextWeek || (nextWeek === null && selected === currentWeek)) {
+    ihkState = "enabled";
+  } else if (nextWeek && selected > nextWeek) {
+    ihkState = "disabled";
+    ihkReason = `Zuerst ${nextWeek} einreichen`;
+  } else {
+    ihkState = "hidden"; // anomalous historical gap before nextWeek, or genehmigt
+  }
+
+  // One connected card: the two writable fields (when submission is
+  // actually possible) followed by the read-only Berufsschule text, which
+  // is always shown/copyable regardless of IHK state - it's just "what
+  // WebUntis has," useful even for a locked, historical week.
   if (text) {
-    const tpl = $("summaryTpl").content.cloneNode(true);
-    tpl.querySelector("pre").textContent = text;
-    el.prepend(tpl);
+    const showForm = ihkState !== "hidden";
+    el.insertAdjacentHTML("afterbegin", `
+      <div class="summary ihk-form">
+        ${showForm ? `
+          <h2>Bei IHK einreichen</h2>
+          <label for="ihkField1">Betriebliche Tätigkeiten</label>
+          <textarea id="ihkField1" rows="4"></textarea>
+          <label for="ihkField2">Unterweisungen, betrieblicher Unterricht, sonstige Schulungen</label>
+          <textarea id="ihkField2" rows="4"></textarea>
+          <label for="berufsschuleText">Berufsschule</label>
+        ` : `<h2>Berufsschule</h2>`}
+        <pre id="berufsschuleText"></pre>
+      </div>`);
+    $("berufsschuleText").textContent = text;
+    if (showForm) {
+      $("ihkField1").value = ihkFields.ausbinhalt1;
+      $("ihkField2").value = ihkFields.ausbinhalt2;
+    }
     $("copyBtn").hidden = false;
     $("copyBtn").onclick = async () => {
       await navigator.clipboard.writeText(text);
@@ -181,11 +271,58 @@ function renderWeek() {
   } else {
     $("copyBtn").hidden = true;
   }
+
+  if (text && ihkState !== "hidden") {
+    const btn = $("ihkBtn");
+    btn.hidden = false;
+    btn.disabled = ihkState === "disabled";
+    btn.title = ihkReason || "";
+    btn.onclick = async () => {
+      btn.disabled = true;
+      setStatus(`Übertrage ${selected} an IHK…`);
+      try {
+        const res = await fetch("/api/submit-ihk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            week: selected,
+            text,
+            // blank -> null ("not specified"), so the backend preserves
+            // whatever's already on IHK instead of clobbering it with "".
+            ausbinhalt1: $("ihkField1").value.trim() || null,
+            ausbinhalt2: $("ihkField2").value.trim() || null,
+          }),
+        });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.detail || res.statusText);
+        setStatus("Bei IHK gespeichert.", "ok");
+        await refreshIhkStatus();
+        await loadWeek(selected); // re-render picks the correct next-button state itself
+      } catch (e) {
+        setStatus("Fehler: " + e.message, "err");
+        btn.disabled = false;
+      }
+    };
+  } else {
+    $("ihkBtn").hidden = true;
+  }
 }
 
 async function loadWeek(id) {
+  // Status messages (e.g. "Bei IHK gespeichert.") belong to the week they
+  // were produced for - only clear on an actual week switch, not on the
+  // same-week reload that scrape/submit success handlers trigger right
+  // after setting their own message (which would otherwise wipe it
+  // immediately).
+  if (id !== selected) setStatus("");
   selected = id;
   weekData = null;
+  // Always blank - data flows one-way, this site -> IHK. Never read
+  // content back from the portal to show/pre-fill here (see
+  // sync_status()'s docstring). Leaving a field blank and submitting
+  // sends it as "not specified" so the existing value on IHK is
+  // preserved untouched, not fetched-then-echoed.
+  ihkFields = { ausbinhalt1: "", ausbinhalt2: "" };
   const res = await fetch(`/api/weeks/${id}`);
   if (res.ok) weekData = await res.json();
   renderSelect();
@@ -196,7 +333,13 @@ async function refreshWeeks() {
   const res = await fetch("/api/weeks");
   const data = await res.json();
   weeks = data.weeks;
+  currentWeek = data.current;
   return data.current;
+}
+
+async function refreshIhkStatus() {
+  const res = await fetch("/api/ihk-status");
+  ihkStatus = res.ok ? await res.json() : {};
 }
 
 $("prev").onclick = () => loadWeek(shiftWeek(selected, -1));
@@ -206,7 +349,7 @@ $("weekSelect").onchange = (e) => loadWeek(e.target.value);
 $("scrapeBtn").onclick = async () => {
   const btn = $("scrapeBtn");
   btn.disabled = true;
-  setStatus(`Scrape ${selected} läuft…`);
+  setStatus("Daten werden abgerufen…");
   try {
     const res = await fetch("/api/scrape", {
       method: "POST",
@@ -215,8 +358,9 @@ $("scrapeBtn").onclick = async () => {
     });
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || res.statusText);
-    setStatus("Scrape fertig.", "ok");
+    setStatus("Daten abgerufen.", "ok");
     await refreshWeeks();
+    await refreshIhkStatus();
     await loadWeek(selected);
   } catch (e) {
     setStatus("Fehler: " + e.message, "err");
@@ -227,6 +371,7 @@ $("scrapeBtn").onclick = async () => {
 
 (async () => {
   const current = await refreshWeeks();
+  await refreshIhkStatus();
   await loadWeek(weeks.includes(current) ? current : (weeks.at(-1) || current));
 })();
 </script>
