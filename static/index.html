@@ -43,7 +43,7 @@
   #ihkBadge.warten { color: var(--warn); }
   #ihkBadge.abgelehnt { color: var(--err); }
   #ihkBtn:disabled { opacity: .5; cursor: not-allowed; }
-  .ihk-form label { display: block; font-size: .85rem; color: var(--muted); margin: .6rem 0 .3rem; }
+  .ihk-form label { display: block; font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin: 1.1rem 0 .35rem; }
   .ihk-form label:first-of-type { margin-top: 0; }
   .ihk-form textarea { width: 100%; min-height: 4.5rem; border: 1px solid var(--border); border-radius: 10px; padding: .5rem .6rem; font: inherit; background: var(--bg); color: var(--text); resize: vertical; }
   .placeholder { color: var(--muted); text-align: center; padding: 3rem 0; }
@@ -273,7 +273,7 @@ function renderWeek() {
           <textarea id="ihkField2" rows="4"></textarea>
           <label for="berufsschuleText">Berufsschule</label>
         ` : hist ? `
-          <h2>IHK-Eintrag (genehmigt, archiviert)</h2>
+          <h2>IHK Eintrag</h2>
           <label>Betriebliche Tätigkeiten</label>
           <pre id="ihkHist1"></pre>
           <label>Unterweisungen, betrieblicher Unterricht, sonstige Schulungen</label>
