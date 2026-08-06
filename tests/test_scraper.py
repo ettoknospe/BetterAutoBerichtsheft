@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-import config
-import scraper
+from app import config
+from app import scraper
 
 
 def test_hm_formats_untis_time():

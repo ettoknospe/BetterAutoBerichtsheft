@@ -33,8 +33,9 @@ import re
 import requests
 from bs4 import BeautifulSoup
 
-import config
-from time_utils import current_week_id
+from . import config
+from .settings import UserSettings
+from .time_utils import current_week_id
 
 log = logging.getLogger("scraper")
 
@@ -46,10 +47,11 @@ class IhkError(Exception):
 
 
 class IhkClient:
-    def __init__(self):
-        if not config.IHK_USER or not config.IHK_PASS:
+    def __init__(self, settings: UserSettings | None = None):
+        self.cfg = settings or UserSettings.from_config()
+        if not self.cfg.IHK_USER or not self.cfg.IHK_PASS:
             raise IhkError("IHK_USER / IHK_PASS not set")
-        self.base = f"https://{config.IHK_HOST}/tibrosBB"
+        self.base = f"https://{self.cfg.IHK_HOST}/tibrosBB"
         self.s = requests.Session()
         self.s.headers["User-Agent"] = "berichtsheft/1.0"
 
@@ -57,7 +59,7 @@ class IhkClient:
         self.s.get(f"{self.base}/BB_auszubildende.jsp", timeout=30)
         r = self.s.post(
             f"{self.base}/azubiHome.jsp",
-            data={"login": config.IHK_USER, "pass": config.IHK_PASS, "anmelden": "Login", "old_url": "null"},
+            data={"login": self.cfg.IHK_USER, "pass": self.cfg.IHK_PASS, "anmelden": "Login", "old_url": "null"},
             timeout=30,
         )
         r.raise_for_status()
@@ -188,8 +190,8 @@ class IhkClient:
         if ausbinhalt2 is None:
             ausbinhalt2 = current["ausbinhalt2"]
 
-        ausb_mail = config.IHK_AUSB_MAIL or current["ausbMail"] or ""
-        ausbabschnitt = config.IHK_AUSBABSCHNITT or current["ausbabschnitt"] or ""
+        ausb_mail = self.cfg.IHK_AUSB_MAIL or current["ausbMail"] or ""
+        ausbabschnitt = self.cfg.IHK_AUSBABSCHNITT or current["ausbabschnitt"] or ""
 
         payload = {
             "token": current["token"],

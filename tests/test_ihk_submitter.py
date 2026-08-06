@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-import config
-import ihk_submitter
-from ihk_client import IhkClient, IhkError
+from app import config
+from app import ihk_submitter
+from app.ihk_client import IhkClient, IhkError
 
 
 @pytest.fixture

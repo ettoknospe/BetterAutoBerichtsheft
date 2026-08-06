@@ -13,9 +13,10 @@ import datetime as dt
 import json
 import logging
 
-import config
-from ihk_client import IhkClient, IhkError
-from time_utils import current_week_id, week_bounds
+from . import config
+from .settings import UserSettings
+from .ihk_client import IhkClient, IhkError
+from .time_utils import current_week_id, week_bounds
 
 log = logging.getLogger("scraper")
 
@@ -40,7 +41,7 @@ def _next_week_id(week_id: str) -> str:
     return current_week_id(sunday + dt.timedelta(days=1))
 
 
-def sync_status():
+def sync_status(settings: UserSettings | None = None):
     """Refresh data/ihk_status.json from the live portal - the ONLY place
     that logs into IHK on a routine basis (piggybacked on scrape/submit,
     never on plain UI navigation - see main.py). Only status/lfdnr
@@ -52,7 +53,8 @@ def sync_status():
     IHK without needing to fetch and display it first).
     Best-effort: a failure here must not break whatever it's piggybacked
     onto."""
-    client = IhkClient()
+    settings = settings or UserSettings.from_config()
+    client = IhkClient(settings)
     client.login()
     try:
         entries = client.list_entries()
@@ -65,16 +67,17 @@ def sync_status():
         for week_id, e in entries.items()
     }
 
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out = config.DATA_DIR / "ihk_status.json"
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out = settings.DATA_DIR / "ihk_status.json"
     out.write_text(json.dumps(status, indent=2, ensure_ascii=False))
     log.info("synced IHK status for %d weeks", len(status))
     return status
 
 
-def load_status() -> dict:
+def load_status(settings: UserSettings | None = None) -> dict:
     """Read the last-synced status map, or {} if never synced."""
-    path = config.DATA_DIR / "ihk_status.json"
+    settings = settings or UserSettings.from_config()
+    path = settings.DATA_DIR / "ihk_status.json"
     if not path.exists():
         return {}
     try:
@@ -83,7 +86,7 @@ def load_status() -> dict:
         return {}
 
 
-def save_local_fields(week_id: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None) -> dict:
+def save_local_fields(week_id: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None, settings: UserSettings | None = None) -> dict:
     """Remember what was typed into ausbinhalt1/ausbinhalt2 for week_id, in
     data/ihk_fields.json - purely this app's own local memory of its own
     prior input, NOT fetched from IHK (one-way flow stays intact, see
@@ -95,10 +98,11 @@ def save_local_fields(week_id: str, ausbinhalt1: str | None = None, ausbinhalt2:
     untouched, same as it's left untouched on the real IHK entry. If both
     are None, this is a no-op: don't create/touch an entry for a week that
     never used these fields."""
+    settings = settings or UserSettings.from_config()
     if ausbinhalt1 is None and ausbinhalt2 is None:
-        return load_local_fields().get(week_id, {})
+        return load_local_fields(settings).get(week_id, {})
 
-    fields = load_local_fields()
+    fields = load_local_fields(settings)
     entry = dict(fields.get(week_id, {"ausbinhalt1": "", "ausbinhalt2": ""}))
     if ausbinhalt1 is not None:
         entry["ausbinhalt1"] = ausbinhalt1
@@ -107,15 +111,16 @@ def save_local_fields(week_id: str, ausbinhalt1: str | None = None, ausbinhalt2:
     entry["savedAt"] = dt.datetime.now().isoformat(timespec="seconds")
     fields[week_id] = entry
 
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out = config.DATA_DIR / "ihk_fields.json"
+    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    out = settings.DATA_DIR / "ihk_fields.json"
     out.write_text(json.dumps(fields, indent=2, ensure_ascii=False))
     return entry
 
 
-def load_local_fields() -> dict:
+def load_local_fields(settings: UserSettings | None = None) -> dict:
     """Read the locally-remembered ausbinhalt1/2 map, or {} if none saved yet."""
-    path = config.DATA_DIR / "ihk_fields.json"
+    settings = settings or UserSettings.from_config()
+    path = settings.DATA_DIR / "ihk_fields.json"
     if not path.exists():
         return {}
     try:
@@ -124,11 +129,12 @@ def load_local_fields() -> dict:
         return {}
 
 
-def load_history() -> dict:
+def load_history(settings: UserSettings | None = None) -> dict:
     """Read the one-time archived ausbinhalt1/2 content per week, or {} if
     the backfill has never been run. See backfill_ihk_history.py - this is a
     static snapshot, not kept in sync automatically."""
-    path = config.DATA_DIR / "ihk_history.json"
+    settings = settings or UserSettings.from_config()
+    path = settings.DATA_DIR / "ihk_history.json"
     if not path.exists():
         return {}
     try:
@@ -137,13 +143,14 @@ def load_history() -> dict:
         return {}
 
 
-def submit_week(week_id: str, formatted_text: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None):
+def submit_week(week_id: str, formatted_text: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None, settings: UserSettings | None = None):
     """Find (or create, if it's the next sequential missing one) the IHK
     entry for week_id, and save formatted_text into its "Berufsschule"
     field. ausbinhalt1/ausbinhalt2 ("Betriebliche Tätigkeiten"/
     "Unterweisungen...") are optional - omit to preserve whatever's
     already on the portal (see IhkClient.save_entry)."""
-    client = IhkClient()
+    settings = settings or UserSettings.from_config()
+    client = IhkClient(settings)
     client.login()
     try:
         entries = client.list_entries()

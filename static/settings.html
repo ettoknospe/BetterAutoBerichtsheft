@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BetterAutoBerichtsheft - Settings</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #fafbfc;
+            --bg-secondary: #ffffff;
+            --text-primary: #0f1419;
+            --text-secondary: #57606a;
+            --accent: #3b82f6;
+            --accent-dark: #2563eb;
+            --border: #d5dce0;
+            --error: #ef4444;
+            --success: #34c759;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg-primary: #0f1419;
+                --bg-secondary: #1a1f28;
+                --text-primary: #f5f7fa;
+                --text-secondary: #a0a9b8;
+                --border: #2d3544;
+            }
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+        header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        nav {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            font-size: 1.5rem;
+        }
+        .nav-buttons {
+            display: flex;
+            gap: 1rem;
+        }
+        .nav-buttons a,
+        .nav-buttons button {
+            padding: 0.5rem 1rem;
+            background: var(--accent);
+            color: white;
+            text-decoration: none;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+        .nav-buttons a:hover,
+        .nav-buttons button:hover {
+            background: var(--accent-dark);
+        }
+        .nav-buttons button.logout {
+            background: var(--error);
+        }
+        .nav-buttons button.logout:hover {
+            background: #dc2626;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        .tabs {
+            display: flex;
+            gap: 1rem;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 2rem;
+            overflow-x: auto;
+        }
+        .tab-button {
+            padding: 1rem;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            color: #999;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+        .tab-button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        .tab-button:hover {
+            color: #667eea;
+        }
+        .tab-content {
+            display: none;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .tab-content.active {
+            display: block;
+        }
+        fieldset {
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fafafa;
+        }
+        legend {
+            padding: 0 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: #555;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        input[type="text"],
+        input[type="password"],
+        input[type="email"],
+        input[type="time"],
+        select,
+        textarea {
+            width: 100%;
+            max-width: 500px;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 1rem;
+            font-family: inherit;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus,
+        input[type="password"]:focus,
+        input[type="email"]:focus,
+        input[type="time"]:focus,
+        select:focus,
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+        .password-note {
+            font-size: 0.85rem;
+            color: #999;
+            margin-top: 0.25rem;
+        }
+        button {
+            padding: 0.75rem 1.5rem;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+        }
+        button:active {
+            transform: translateY(0);
+        }
+        button.danger {
+            background: #d32f2f;
+        }
+        button.danger:hover {
+            background: #b71c1c;
+        }
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+        .button-group button {
+            flex: 1;
+        }
+        .message {
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        .message.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+            display: block;
+        }
+        .message.error {
+            background: #ffebee;
+            color: #d32f2f;
+            display: block;
+        }
+        .admin-section {
+            display: none;
+        }
+        .admin-tab {
+            display: none;
+        }
+        .admin-section.show {
+            display: block;
+        }
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        .users-table th,
+        .users-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        .users-table th {
+            background: #fafafa;
+            font-weight: 600;
+        }
+        .users-table tr:hover {
+            background: #f5f5f5;
+        }
+        .form-row {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .form-row .form-group {
+            flex: 1;
+            min-width: 250px;
+        }
+        .form-row input,
+        .form-row select {
+            max-width: 100%;
+        }
+        .spinner {
+            display: none;
+            width: 1rem;
+            height: 1rem;
+            border: 2px solid rgba(102, 126, 234, 0.3);
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 0.5rem;
+        }
+        button.loading {
+            opacity: 0.8;
+            pointer-events: none;
+        }
+        button.loading .spinner {
+            display: inline-block;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <nav>
+            <h1>Berichtsheft</h1>
+            <div class="nav-buttons">
+                <a href="/">Back to Weeks</a>
+                <button class="logout" onclick="logout()">Logout</button>
+            </div>
+        </nav>
+    </header>
+
+    <div class="container">
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('untis')">WebUntis</button>
+            <button class="tab-button" onclick="switchTab('scraper')">Scraper</button>
+            <button class="tab-button" onclick="switchTab('ihk')">IHK</button>
+            <button class="tab-button" onclick="switchTab('account')">Account</button>
+            <button class="tab-button admin-tab" onclick="switchTab('admin')">Admin</button>
+        </div>
+
+        <!-- WebUntis Tab -->
+        <div id="untis" class="tab-content active">
+            <div class="message" id="untis-msg"></div>
+            <form id="untisForm" onsubmit="saveUntis(event)">
+                <fieldset>
+                    <legend>WebUntis Configuration</legend>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="untis_host">Host</label>
+                            <input type="text" id="untis_host" placeholder="e.g., exemple.webuntis.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="untis_school">School</label>
+                            <input type="text" id="untis_school" placeholder="e.g., gymnasium">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="untis_user">Username</label>
+                            <input type="text" id="untis_user" placeholder="WebUntis username">
+                        </div>
+                        <div class="form-group">
+                            <label for="untis_pass">Password</label>
+                            <input type="password" id="untis_pass" placeholder="WebUntis password">
+                            <div class="password-note">Leave blank to keep existing password</div>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="subject_filter">Subject Filter (comma-separated)</label>
+                        <input type="text" id="subject_filter" placeholder="e.g., Math, English, History">
+                    </div>
+                </fieldset>
+                <div class="button-group">
+                    <button type="submit"><span class="spinner"></span>Save WebUntis</button>
+                    <button type="button" onclick="testUntis(event)">Test Connection</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Scraper Tab -->
+        <div id="scraper" class="tab-content">
+            <div class="message" id="scraper-msg"></div>
+            <form id="scraperForm" onsubmit="saveScraper(event)">
+                <fieldset>
+                    <legend>Scraper Schedule</legend>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="scrape_day">Day of Week</label>
+                            <select id="scrape_day">
+                                <option value="off">Off (manual only)</option>
+                                <option value="mon">Monday</option>
+                                <option value="tue">Tuesday</option>
+                                <option value="wed">Wednesday</option>
+                                <option value="thu">Thursday</option>
+                                <option value="fri">Friday</option>
+                                <option value="sat">Saturday</option>
+                                <option value="sun">Sunday</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="scrape_time">Time (24-hour)</label>
+                            <input type="time" id="scrape_time" value="18:00">
+                        </div>
+                    </div>
+                </fieldset>
+                <button type="submit"><span class="spinner"></span>Save Schedule</button>
+            </form>
+        </div>
+
+        <!-- IHK Tab -->
+        <div id="ihk" class="tab-content">
+            <div class="message" id="ihk-msg"></div>
+            <form id="ihkForm" onsubmit="saveIhk(event)">
+                <fieldset>
+                    <legend>IHK Portal Configuration</legend>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="ihk_host">Host</label>
+                            <input type="text" id="ihk_host" placeholder="e.g., www.bildung-ihk-nordwestfalen.de (no https://)">
+                        </div>
+                        <div class="form-group">
+                            <label for="ihk_user">Username</label>
+                            <input type="text" id="ihk_user" placeholder="IHK username">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="ihk_pass">Password</label>
+                            <input type="password" id="ihk_pass" placeholder="IHK password">
+                            <div class="password-note">Leave blank to keep existing password</div>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="ihk_ausbabschnitt">Ausbildungsabschnitt</label>
+                            <input type="text" id="ihk_ausbabschnitt" placeholder="e.g., 1">
+                        </div>
+                        <div class="form-group">
+                            <label for="ihk_ausb_mail">Ausbilder Mail</label>
+                            <input type="email" id="ihk_ausb_mail" placeholder="trainer@example.com">
+                        </div>
+                    </div>
+                </fieldset>
+                <div class="button-group">
+                    <button type="submit"><span class="spinner"></span>Save IHK</button>
+                    <button type="button" onclick="testIhk(event)">Test Connection</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Account Tab -->
+        <div id="account" class="tab-content">
+            <div class="message" id="account-msg"></div>
+            <form id="passwordForm" onsubmit="changePassword(event)">
+                <fieldset>
+                    <legend>Change Password</legend>
+                    <div class="form-group">
+                        <label for="current_password">Current Password</label>
+                        <input type="password" id="current_password" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new_password">New Password</label>
+                        <input type="password" id="new_password" required>
+                    </div>
+                </fieldset>
+                <button type="submit"><span class="spinner"></span>Change Password</button>
+            </form>
+        </div>
+
+        <!-- Admin Tab -->
+        <div id="admin" class="tab-content admin-section">
+            <div class="message" id="admin-msg"></div>
+            <fieldset>
+                <legend>Create New User</legend>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="new_user_name">Username</label>
+                        <input type="text" id="new_user_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="new_user_pass">Password</label>
+                        <input type="password" id="new_user_pass" required>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>
+                        <input type="checkbox" id="new_user_admin">
+                        Make Admin
+                    </label>
+                </div>
+                <button type="button" onclick="createUser()"><span class="spinner"></span>Create User</button>
+            </fieldset>
+
+            <fieldset>
+                <legend>Users</legend>
+                <table class="users-table" id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Role</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                    </tbody>
+                </table>
+            </fieldset>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let currentSettings = null;
+
+        async function init() {
+            try {
+                const res = await fetch('/api/auth/whoami');
+                if (res.status === 401) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+                currentUser = await res.json();
+
+                // Show admin tab only for admins
+                if (currentUser.is_admin) {
+                    document.querySelectorAll('.admin-tab').forEach(el => el.style.display = 'block');
+                    document.getElementById('admin').style.display = 'block';
+                    await loadUsers();
+                }
+
+                await loadSettings();
+            } catch (err) {
+                console.error('Init failed:', err);
+            }
+        }
+
+        async function loadSettings() {
+            try {
+                const res = await fetch('/api/me/settings');
+                currentSettings = await res.json();
+
+                document.getElementById('untis_host').value = currentSettings.untis_host || '';
+                document.getElementById('untis_school').value = currentSettings.untis_school || '';
+                document.getElementById('untis_user').value = currentSettings.untis_user || '';
+                document.getElementById('subject_filter').value = currentSettings.subject_filter || '';
+
+                document.getElementById('scrape_day').value = currentSettings.scrape_day || 'off';
+                document.getElementById('scrape_time').value = currentSettings.scrape_time || '18:00';
+
+                document.getElementById('ihk_host').value = currentSettings.ihk_host || '';
+                document.getElementById('ihk_user').value = currentSettings.ihk_user || '';
+                document.getElementById('ihk_ausbabschnitt').value = currentSettings.ihk_ausbabschnitt || '';
+                document.getElementById('ihk_ausb_mail').value = currentSettings.ihk_ausb_mail || '';
+            } catch (err) {
+                console.error('Failed to load settings:', err);
+            }
+        }
+
+        async function loadUsers() {
+            try {
+                const res = await fetch('/api/admin/users');
+                const users = await res.json();
+                const tbody = document.getElementById('usersTableBody');
+                tbody.innerHTML = users.map(u => `
+                    <tr>
+                        <td>${u.id}</td>
+                        <td>${u.username}</td>
+                        <td>${u.is_admin ? 'Admin' : 'User'}</td>
+                        <td>${new Date(u.created_at).toLocaleDateString()}</td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                console.error('Failed to load users:', err);
+            }
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        async function saveUntis(e) {
+            e.preventDefault();
+            await saveSettings('untis', {
+                untis_host: document.getElementById('untis_host').value,
+                untis_school: document.getElementById('untis_school').value,
+                untis_user: document.getElementById('untis_user').value,
+                untis_pass: document.getElementById('untis_pass').value || null,
+                subject_filter: document.getElementById('subject_filter').value
+            }, e);
+        }
+
+        async function saveScraper(e) {
+            e.preventDefault();
+            await saveSettings('scraper', {
+                scrape_day: document.getElementById('scrape_day').value,
+                scrape_time: document.getElementById('scrape_time').value
+            }, e);
+        }
+
+        async function saveIhk(e) {
+            e.preventDefault();
+            await saveSettings('ihk', {
+                ihk_host: document.getElementById('ihk_host').value,
+                ihk_user: document.getElementById('ihk_user').value,
+                ihk_pass: document.getElementById('ihk_pass').value || null,
+                ihk_ausbabschnitt: document.getElementById('ihk_ausbabschnitt').value,
+                ihk_ausb_mail: document.getElementById('ihk_ausb_mail').value
+            }, e);
+        }
+
+        async function saveSettings(tab, data, e) {
+            const form = e.target;
+            const btn = form.querySelector('button[type="submit"]');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/me/settings', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+
+                const msgEl = document.getElementById(`${tab}-msg`);
+                if (res.ok) {
+                    msgEl.textContent = 'Settings saved!';
+                    msgEl.className = 'message success';
+                    if (tab === 'untis') document.getElementById('untis_pass').value = '';
+                    if (tab === 'ihk') document.getElementById('ihk_pass').value = '';
+                } else {
+                    const error = await res.json();
+                    msgEl.textContent = 'Error: ' + (error.detail || 'Unknown error');
+                    msgEl.className = 'message error';
+                }
+            } catch (err) {
+                document.getElementById(`${tab}-msg`).textContent = 'Network error: ' + err.message;
+                document.getElementById(`${tab}-msg`).className = 'message error';
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        async function changePassword(e) {
+            e.preventDefault();
+            const btn = e.target.closest('button');
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/me/password', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        current_password: document.getElementById('current_password').value,
+                        new_password: document.getElementById('new_password').value
+                    })
+                });
+
+                const msgEl = document.getElementById('account-msg');
+                if (res.ok) {
+                    msgEl.textContent = 'Password changed!';
+                    msgEl.className = 'message success';
+                    document.getElementById('passwordForm').reset();
+                } else {
+                    const error = await res.json();
+                    msgEl.textContent = 'Error: ' + (error.detail || 'Unknown error');
+                    msgEl.className = 'message error';
+                }
+            } catch (err) {
+                document.getElementById('account-msg').textContent = 'Network error: ' + err.message;
+                document.getElementById('account-msg').className = 'message error';
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        async function createUser() {
+            const btn = event.target;
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/admin/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        username: document.getElementById('new_user_name').value,
+                        password: document.getElementById('new_user_pass').value,
+                        is_admin: document.getElementById('new_user_admin').checked
+                    })
+                });
+
+                const msgEl = document.getElementById('admin-msg');
+                if (res.ok) {
+                    msgEl.textContent = 'User created!';
+                    msgEl.className = 'message success';
+                    document.getElementById('new_user_name').value = '';
+                    document.getElementById('new_user_pass').value = '';
+                    document.getElementById('new_user_admin').checked = false;
+                    await loadUsers();
+                } else {
+                    const error = await res.json();
+                    msgEl.textContent = 'Error: ' + (error.detail || 'Unknown error');
+                    msgEl.className = 'message error';
+                }
+            } catch (err) {
+                document.getElementById('admin-msg').textContent = 'Network error: ' + err.message;
+                document.getElementById('admin-msg').className = 'message error';
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        async function testUntis(e) {
+            e.preventDefault();
+            const btn = e.target;
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/test/untis', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        untis_host: document.getElementById('untis_host').value,
+                        untis_school: document.getElementById('untis_school').value,
+                        untis_user: document.getElementById('untis_user').value,
+                        untis_pass: document.getElementById('untis_pass').value || null
+                    })
+                });
+
+                const msgEl = document.getElementById('untis-msg');
+                if (res.ok) {
+                    msgEl.textContent = '✓ WebUntis connection successful!';
+                    msgEl.className = 'message success';
+                } else {
+                    const error = await res.json();
+                    msgEl.textContent = '✗ Connection failed: ' + (error.detail || 'Unknown error');
+                    msgEl.className = 'message error';
+                }
+            } catch (err) {
+                document.getElementById('untis-msg').textContent = '✗ Network error: ' + err.message;
+                document.getElementById('untis-msg').className = 'message error';
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        async function testIhk(e) {
+            e.preventDefault();
+            const btn = e.target;
+            btn.classList.add('loading');
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/test/ihk', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ihk_host: document.getElementById('ihk_host').value,
+                        ihk_user: document.getElementById('ihk_user').value,
+                        ihk_pass: document.getElementById('ihk_pass').value || null
+                    })
+                });
+
+                const msgEl = document.getElementById('ihk-msg');
+                if (res.ok) {
+                    msgEl.textContent = '✓ IHK connection successful!';
+                    msgEl.className = 'message success';
+                } else {
+                    const error = await res.json();
+                    msgEl.textContent = '✗ Connection failed: ' + (error.detail || 'Unknown error');
+                    msgEl.className = 'message error';
+                }
+            } catch (err) {
+                document.getElementById('ihk-msg').textContent = '✗ Network error: ' + err.message;
+                document.getElementById('ihk-msg').className = 'message error';
+            } finally {
+                btn.classList.remove('loading');
+                btn.disabled = false;
+            }
+        }
+
+        async function logout() {
+            await fetch('/api/auth/logout', { method: 'POST' });
+            window.location.href = '/login.html';
+        }
+
+        init();
+    </script>
+</body>
+</html>

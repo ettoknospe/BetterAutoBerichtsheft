@@ -24,8 +24,8 @@ import datetime as dt
 import json
 import logging
 
-import config
-from ihk_client import IhkClient
+from . import config
+from .ihk_client import IhkClient
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger("backfill")

@@ -6,9 +6,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app/ app/
 COPY static/ static/
+COPY tests/ tests/
+COPY pytest.ini .
 
 ENV DATA_DIR=/data
 VOLUME /data
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--app-dir", "app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

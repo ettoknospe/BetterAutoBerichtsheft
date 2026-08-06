@@ -4,11 +4,11 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-import config
-import ihk_submitter
-import main
-import scraper
-from ihk_client import IhkError
+from app import config
+from app import ihk_submitter
+from app import main
+from app import scraper
+from app.ihk_client import IhkError
 
 client = TestClient(main.app)
 

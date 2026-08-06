@@ -3,103 +3,491 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Berichtsheft</title>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>BetterAutoBerichtsheft</title>
 <style>
   :root {
-    --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73;
-    --accent: #0071e3; --border: #d2d2d7; --ok: #34c759; --err: #ff3b30; --warn: #c9960c;
+    --bg: #fafbfc; --card: #ffffff; --text: #0f1419; --text-muted: #57606a;
+    --accent: #3b82f6; --accent-dark: #2563eb; --border: #d5dce0;
+    --ok: #34c759; --err: #ef4444; --warn: #c9960c;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #161617; --card: #1d1d1f; --text: #f5f5f7; --muted: #86868b; --border: #3a3a3c; }
+    :root {
+      --bg: #0f1419; --card: #1a1f28; --text: #f5f7fa; --text-muted: #a0a9b8;
+      --border: #2d3544;
+    }
   }
-  * { box-sizing: border-box; margin: 0; }
-  body { font: 16px/1.5 -apple-system, system-ui, sans-serif; background: var(--bg); color: var(--text); max-width: 720px; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+
+  body {
+    font: 16px/1.5 -apple-system, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    flex-direction: row;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 260px;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem;
+    overflow-y: auto;
+    flex-shrink: 0;
+    transition: width 0.3s ease;
+  }
+
+  .sidebar.collapsed {
+    width: 90px;
+  }
+
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .sidebar.collapsed .sidebar-header {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .sidebar-header:hover {
+    opacity: 0.7;
+  }
+
+  .sidebar-logo-img {
+    width: 50px;
+    height: 50px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    object-fit: cover;
+  }
+
+  .sidebar.collapsed .sidebar-logo-img {
+    width: 60px;
+    height: 60px;
+  }
+
+  .sidebar-title {
+    font-size: 1rem;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    white-space: nowrap;
+  }
+
+  .sidebar.collapsed .sidebar-title {
+    font-size: 0.8rem;
+    text-align: center;
+  }
+
+  .title-short {
+    display: none;
+  }
+
+  .sidebar.collapsed .title-full {
+    display: none;
+  }
+
+  .sidebar.collapsed .title-short {
+    display: inline;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .sidebar-nav a, .sidebar-nav button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: var(--text);
+    text-decoration: none;
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all 0.2s;
+    font-family: inherit;
+  }
+
+  .sidebar.collapsed .sidebar-nav a,
+  .sidebar.collapsed .sidebar-nav button {
+    gap: 0;
+    padding: 0.75rem;
+    justify-content: center;
+  }
+
+  .nav-icon {
+    font-size: 1.2rem;
+  }
+
+  .nav-icon-img {
+    width: 1.2rem;
+    height: 1.2rem;
+    display: inline-block;
+  }
+
+  .sidebar-nav a .nav-icon-img,
+  .sidebar-nav button .nav-icon-img {
+    filter: invert(1);
+  }
+
+  @media (prefers-color-scheme: light) {
+    .sidebar-nav a .nav-icon-img,
+    .sidebar-nav button .nav-icon-img {
+      filter: none;
+    }
+  }
+
+  .nav-text {
+    display: inline;
+  }
+
+  .sidebar.collapsed .nav-text {
+    display: none;
+  }
+
+  .sidebar-nav a:hover, .sidebar-nav button:hover {
+    background: var(--bg);
+    border-color: var(--border);
+  }
+
+  .sidebar-footer {
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .sidebar.collapsed .sidebar-footer {
+    padding-top: 1rem;
+  }
+
+  .logout-btn {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    background: var(--err);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-weight: 600;
+    transition: all 0.2s;
+    font-family: inherit;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .sidebar.collapsed .logout-btn {
+    padding: 0.75rem;
+    justify-content: center;
+    gap: 0;
+  }
+
+  .logout-btn:hover {
+    background: #dc2626;
+  }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .content-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.5rem 1rem;
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
   h1 { font-size: 1.6rem; margin-bottom: 1rem; }
-  .nav { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
-  .nav button, .actions button { border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: .45rem .8rem; font-size: 1rem; cursor: pointer; }
-  .nav button:hover, .actions button:hover { border-color: var(--accent); }
+
+  .nav { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+  .nav button, .actions button {
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    border-radius: 8px;
+    padding: .6rem .9rem;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .nav button:hover, .actions button:hover {
+    border-color: var(--accent);
+    background: var(--bg);
+  }
   .nav button:disabled { opacity: .5; cursor: not-allowed; }
-  .nav select { flex: 1; border: 1px solid var(--border); background: var(--card); color: var(--text); border-radius: 10px; padding: .45rem .6rem; font-size: 1rem; }
-  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1rem; }
-  .actions { display: flex; gap: .5rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
-  .actions .primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  .day { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; margin-bottom: .9rem; }
+
+  .nav select {
+    flex: 1;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    border-radius: 8px;
+    padding: .6rem .9rem;
+    font-size: 0.95rem;
+  }
+
+  .meta { color: var(--text-muted); font-size: .9rem; margin-bottom: 1rem; }
+
+  .actions {
+    display: flex;
+    gap: .6rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .actions .primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
+  .actions .primary:hover {
+    background: var(--accent-dark);
+  }
+
+  .day {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: .9rem;
+  }
   .day h2 { font-size: 1.05rem; margin-bottom: .6rem; }
+
   .lesson { padding: .5rem 0; border-top: 1px solid var(--border); }
   .lesson:first-of-type { border-top: none; }
-  .lesson .head { display: flex; gap: .6rem; align-items: baseline; }
+  .lesson .head { display: flex; gap: .6rem; align-items: baseline; justify-content: space-between; }
   .lesson .subj { font-weight: 600; }
-  .lesson .time { color: var(--muted); font-size: .8rem; }
+  .lesson .time { color: var(--text-muted); font-size: .8rem; }
+  .lesson .teacher { color: var(--text-muted); font-size: .85rem; margin-bottom: .4rem; }
   .lesson .content { white-space: pre-wrap; margin-top: .15rem; }
-  .lesson .empty { color: var(--muted); font-style: italic; }
-  .summary { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 1rem; margin-bottom: 1.5rem; }
-  .summary h2 { font-size: 1.05rem; margin-bottom: .6rem; display: flex; justify-content: space-between; align-items: center; }
+  .lesson .empty { color: var(--text-muted); font-style: italic; }
+
+  .summary {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+  .summary h2 {
+    font-size: 1.05rem;
+    margin-bottom: .6rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
   .summary pre { white-space: pre-wrap; font: inherit; }
-  #status { min-height: 1.4rem; font-size: .9rem; margin-bottom: 1rem; }
-  #status.err { color: var(--err); } #status.ok { color: var(--ok); }
+
+  #status {
+    min-height: 1.4rem;
+    font-size: .9rem;
+    margin-bottom: 1rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+  }
+  #status.err {
+    color: var(--err);
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+  }
+  #status.ok {
+    color: var(--ok);
+    background: rgba(52, 199, 89, 0.1);
+    border: 1px solid rgba(52, 199, 89, 0.2);
+  }
+
   #ihkBadge { font-size: .8rem; margin-left: .5rem; }
   #ihkBadge.genehmigt { color: var(--ok); }
-  #ihkBadge.eingetragen { color: var(--muted); }
+  #ihkBadge.eingetragen { color: var(--text-muted); }
   #ihkBadge.warten { color: var(--warn); }
   #ihkBadge.abgelehnt { color: var(--err); }
+
   #ihkBtn:disabled { opacity: .5; cursor: not-allowed; }
-  .ihk-form label { display: block; font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); margin: 1.1rem 0 .35rem; }
+
+  .ihk-form label {
+    display: block;
+    font-size: .8rem;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 1.1rem 0 .35rem;
+  }
   .ihk-form label:first-of-type { margin-top: 0; }
-  .ihk-form textarea { width: 100%; min-height: 4.5rem; border: 1px solid var(--border); border-radius: 10px; padding: .5rem .6rem; font: inherit; background: var(--bg); color: var(--text); resize: vertical; }
-  .placeholder { color: var(--muted); text-align: center; padding: 3rem 0; }
+  .ihk-form textarea {
+    width: 100%;
+    min-height: 4.5rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .75rem;
+    font: inherit;
+    background: var(--bg);
+    color: var(--text);
+    resize: vertical;
+  }
+  .placeholder { color: var(--text-muted); text-align: center; padding: 3rem 0; }
+
+  @media (max-width: 768px) {
+    body { flex-direction: column; }
+    .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+    .sidebar.collapsed { width: 100%; }
+    .content-wrapper { padding: 1rem; }
+  }
 </style>
 </head>
 <body>
-<h1>📓 Berichtsheft</h1>
 
-<div class="nav">
-  <button id="prev" title="Woche zurück">←</button>
-  <select id="weekSelect"></select>
-  <button id="next" title="Woche vor">→</button>
-</div>
-<div class="meta"><span id="weekMeta"></span> <span id="ihkBadge"></span></div>
+<aside class="sidebar" id="sidebar" onclick="expandSidebar(event)">
+  <div class="sidebar-header" onclick="expandSidebar(event)">
+    <img src="/logo.svg" alt="Logo" class="sidebar-logo-img">
+    <div class="sidebar-title">
+      <span class="title-full">BetterAutoBerichtsheft</span>
+      <span class="title-short">BAB</span>
+    </div>
+  </div>
 
-<div class="actions">
-  <button class="primary" id="scrapeBtn">Jetzt Abrufen</button>
-  <button id="copyBtn" hidden>Text kopieren</button>
-  <button id="ihkBtn" hidden>Bei IHK einreichen</button>
-</div>
-<div id="status"></div>
+  <nav class="sidebar-nav">
+    <a href="/settings.html" title="Einstellungen öffnen" class="nav-link">
+      <span class="nav-icon">⚙</span>
+      <span class="nav-text">Einstellungen</span>
+    </a>
+    <a href="/bulkops.html" title="Datenimport" class="nav-link">
+      <img src="/sync.svg" alt="Sync" class="nav-icon nav-icon-img">
+      <span class="nav-text">Datenimport</span>
+    </a>
+  </nav>
 
-<div id="content"><div class="placeholder">Lade…</div></div>
+  <div class="sidebar-footer">
+    <button class="logout-btn" onclick="logout()" title="Abmelden" class="logout-link">
+      <span class="nav-icon">←</span>
+      <span class="nav-text">Abmelden</span>
+    </button>
+  </div>
+</aside>
+
+<main class="main" onclick="collapseSidebar()">
+  <div class="content-wrapper">
+    <div class="nav">
+      <button id="prev" title="Woche zurück">←</button>
+      <select id="weekSelect"></select>
+      <button id="next" title="Woche vor">→</button>
+    </div>
+    <div class="meta"><span id="weekMeta"></span> <span id="ihkBadge"></span></div>
+
+    <div class="actions">
+      <button class="primary" id="scrapeBtn">Jetzt Abrufen</button>
+      <button id="ihkBtn" hidden>Bei IHK einreichen</button>
+    </div>
+    <div id="status"></div>
+
+    <div id="content"><div class="placeholder">Lade…</div></div>
+  </div>
+</main>
 
 <script>
-const $ = (id) => document.getElementById(id);
-let weeks = [];          // weeks with data
-let selected = null;     // "2026-W29"
-let weekData = null;
-let currentWeek = null;  // this ISO week, per the server
-let ihkStatus = {};      // week_id -> {lfdnr, status, syncedAt}, from /api/ihk-status's "status"
-// week_id -> {ausbinhalt1, ausbinhalt2, savedAt} - THIS APP'S OWN memory of what
-// it last typed+submitted, from /api/ihk-status's "fields". Never fetched from
-// the IHK portal - data still flows one-way, this site -> IHK (see loadWeek()).
-let ihkFieldsCache = {};
-let ihkFields = { ausbinhalt1: "", ausbinhalt2: "" };  // pre-fill for the current week's editable fields
-let ihkHistory = {};     // week_id -> {lfdnr, status, ausbinhalt1, ausbinhalt2, scrapedAt}, one-time archive from /api/ihk-history - genehmigt weeks only, read-only display
+// Auth guard
+(async () => {
+  try {
+    const res = await fetch('/api/auth/whoami');
+    if (res.status === 401) {
+      window.location.href = '/login.html';
+      throw new Error('Not authenticated');
+    }
+  } catch (err) {
+    window.location.href = '/login.html';
+    return;
+  }
+})();
 
-const fmtDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("de-DE", { weekday: "long", day: "2-digit", month: "2-digit" });
-const fmtShort = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+function expandSidebar(event) {
+  event.stopPropagation();
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.remove('collapsed');
+  localStorage.setItem('sidebarCollapsed', 'false');
+}
+
+function collapseSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.add('collapsed');
+  localStorage.setItem('sidebarCollapsed', 'true');
+}
+
+function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.toggle('collapsed');
+  localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+}
+
+function logout() {
+  fetch('/api/auth/logout', { method: 'POST' }).then(() => {
+    window.location.href = '/login.html';
+  });
+}
+
+// Restore sidebar state
+if (localStorage.getItem('sidebarCollapsed') === 'true') {
+  document.getElementById('sidebar').classList.add('collapsed');
+}
+
+const $ = (id) => document.getElementById(id);
+let weeks = [];
+let selected = null;
+let currentWeek = null;
+let ihkStatus = {};
+let ihkHistory = {};
+let ihkFieldsCache = {};
+let ihkFields = { ausbinhalt1: "", ausbinhalt2: "" };
+let weekText = "";
+const IHK_BADGE_LABELS = {
+  "genehmigt": ["genehmigt", "genehmigt"],
+  "in_bearbeitung": ["in Bearbeitung", "in-bearbeitung"],
+  "warten_auf_genehmigung": ["warten auf Genehmigung", "warten-auf-genehmigung"],
+  "abgelehnt": ["abgelehnt", "abgelehnt"],
+};
 
 function weekBounds(id) {
   const [y, w] = id.split("-W").map(Number);
-  // ISO week 1 = week containing Jan 4
   const jan4 = new Date(Date.UTC(y, 0, 4));
   const monday = new Date(jan4);
   monday.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7) + (w - 1) * 7);
   const sunday = new Date(monday); sunday.setUTCDate(monday.getUTCDate() + 6);
   return [monday.toISOString().slice(0, 10), sunday.toISOString().slice(0, 10)];
 }
+
 function shiftWeek(id, delta) {
   const [start] = weekBounds(id);
   const d = new Date(start + "T12:00:00Z");
   d.setUTCDate(d.getUTCDate() + delta * 7);
-  // ISO week of shifted monday
-  const t = new Date(d); t.setUTCDate(t.getUTCDate() + 3); // thursday decides ISO year
+  const t = new Date(d); t.setUTCDate(t.getUTCDate() + 3);
   const isoYear = t.getUTCFullYear();
   const jan4 = new Date(Date.UTC(isoYear, 0, 4));
   const week1Mon = new Date(jan4); week1Mon.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7));
@@ -107,42 +495,7 @@ function shiftWeek(id, delta) {
   return `${isoYear}-W${String(wk).padStart(2, "0")}`;
 }
 
-function setStatus(msg, cls = "") { const s = $("status"); s.textContent = msg; s.className = cls; }
-
-function renderSelect() {
-  const all = new Set(weeks);
-  all.add(selected);
-  const sorted = [...all].sort();
-  $("weekSelect").innerHTML = sorted.map((w) => {
-    const [s, e] = weekBounds(w);
-    const label = `${w} (${fmtShort(s)} – ${fmtShort(e)})${weeks.includes(w) ? "" : " · keine Daten"}`;
-    return `<option value="${w}" ${w === selected ? "selected" : ""}>${label}</option>`;
-  }).join("");
-}
-
-function formattedText(data) {
-  const bySubject = new Map();
-  for (const day of data.days) {
-    for (const l of day.lessons) {
-      if (!l.content) continue;
-      const key = l.subjectLong || l.subject;
-      if (!bySubject.has(key)) bySubject.set(key, new Set());
-      bySubject.get(key).add(l.content.trim());
-    }
-  }
-  const parts = [];
-  for (const [subj, contents] of bySubject) {
-    parts.push(subj + ":\n" + [...contents].map((c) => "- " + c.replace(/\n+/g, "; ")).join("\n"));
-  }
-  return parts.join("\n\n");
-}
-
-const IHK_BADGE_LABELS = {
-  genehmigt: ["eingetragen und genehmigt", "genehmigt"],
-  in_bearbeitung: ["eingetragen", "eingetragen"],
-  warten_auf_genehmigung: ["Warte auf Genehmigung", "warten"],
-  abgelehnt: ["nicht genehmigt", "abgelehnt"],
-};
+function fmtShort(iso) { const [y,m,d] = iso.split("-"); return `${d}.${m}.`; }
 
 function nextSubmittableWeek() {
   const known = Object.keys(ihkStatus);
@@ -164,105 +517,108 @@ function renderIhkBadge() {
   badge.className = cls;
 }
 
-function renderWeek() {
-  const el = $("content");
-  const [s, e] = weekBounds(selected);
-  $("weekMeta").textContent = weekData
-    ? `${fmtShort(s)} – ${fmtShort(e)} · Abgerufen am: ${new Date(weekData.scrapedAt).toLocaleString("de-DE")}`
-    : `${fmtShort(s)} – ${fmtShort(e)}`;
+function setStatus(msg, cls = "") { const s = $("status"); s.textContent = msg; s.className = cls; }
+
+function renderSelect() {
+  const all = new Set(weeks);
+  all.add(selected);
+  const today = new Date().toISOString().slice(0, 10);
+  const sorted = [...all].sort().filter(w => {
+    const [s, e] = weekBounds(w);
+    return s <= today;
+  });
+  $("weekSelect").innerHTML = sorted.map((w) => {
+    const [s, e] = weekBounds(w);
+    const label = `${w} (${fmtShort(s)} – ${fmtShort(e)})${weeks.includes(w) ? "" : " · keine Daten"}`;
+    return `<option value="${w}" ${w === selected ? "selected" : ""}>${label}</option>`;
+  }).join("");
+}
+
+function formattedText(data) {
+  const bySubject = new Map();
+  for (const day of data.days) {
+    for (const l of day.lessons) {
+      if (!l.content) continue;
+      const key = l.subjectLong || l.subject;
+      bySubject.set(key, (bySubject.get(key) || "") + l.content + "\n");
+    }
+  }
+  return [...bySubject.entries()].map(([k, v]) => k + ": " + v).join("\n");
+}
+
+function loadWeek(wid) {
+  selected = wid;
+  renderSelect();
+
+  const cached = ihkFieldsCache[wid];
+  ihkFields = { ausbinhalt1: cached?.ausbinhalt1 ?? "", ausbinhalt2: cached?.ausbinhalt2 ?? "" };
+
+  const data = JSON.parse(localStorage.getItem(`week:${wid}`));
   renderIhkBadge();
-
-  // Can navigate forward up to the latest (current) ISO week, never past
-  // it - there's nothing to show beyond "now" (string comparison works
-  // here since week ids are always zero-padded YYYY-Www, same as the
-  // ihkState future-week check below).
-  $("next").disabled = !currentWeek || selected >= currentWeek;
-
-  // A genehmigt week is done and in the past - it can't change anymore,
-  // so re-scraping it is pointless. Hide the button rather than let
-  // someone burn a WebUntis round-trip on a locked record.
-  const ihkEntry = ihkStatus[selected];
-  $("scrapeBtn").hidden = ihkEntry?.status === "genehmigt";
-
-  if (!weekData) {
-    el.innerHTML = `<div class="placeholder">Keine Daten für ${selected}.<br>„Jetzt scrapen" holt diese Woche aus WebUntis.</div>`;
-    $("copyBtn").hidden = true;
-    $("ihkBtn").hidden = true;
-    return;
+  if (data) {
+    renderWeek(data, wid);
+  } else {
+    $("content").innerHTML = `<div class="placeholder">Noch keine Daten für diese Woche.</div>`;
   }
-  if (weekData.unavailable) {
-    el.innerHTML = `<div class="placeholder">Kann noch nicht abgerufen werden.<br>WebUntis hat diesen Zeitraum noch nicht freigegeben.</div>`;
-    $("copyBtn").hidden = true;
-    $("ihkBtn").hidden = true;
-    return;
-  }
-  const noSchedule = weekData.holiday || weekData.schoolYearBoundary || weekData.allCancelled;
-  if (!noSchedule && !weekData.days.length) {
+}
+
+function renderWeek(data, wid) {
+  const el = $("content");
+  const [s, e] = weekBounds(wid);
+  $("weekMeta").textContent = weekBounds(wid).join(" – ") + " · Abgerufen am: " + (weeks.includes(wid) ? new Date(localStorage.getItem(`scrapedAt:${wid}`)).toLocaleString() : "—");
+
+  const days = data.days;
+  const noSchedule = data.holiday || data.schoolYearBoundary || data.allCancelled;
+
+  if (!noSchedule && !days.length) {
     el.innerHTML = `<div class="placeholder">Keine Stunden in dieser Woche gefunden.</div>`;
-    $("copyBtn").hidden = true;
-    $("ihkBtn").hidden = true;
     return;
   }
-  el.innerHTML = noSchedule ? "" : weekData.days.map((day) => `
-    <div class="day">
-      <h2>${fmtDate(day.date)}</h2>
-      ${day.lessons.map((l) => `
-        <div class="lesson">
-          <div class="head"><span class="subj">${l.subjectLong || l.subject}</span><span class="time">${l.start}–${l.end}${l.teacher ? " · " + l.teacher : ""}</span></div>
-          ${l.content ? `<div class="content">${l.content}</div>` : `<div class="empty">kein Lehrstoff eingetragen</div>`}
-        </div>`).join("")}
-    </div>`).join("");
 
-  const text = weekData.holiday
+  weekText = data.holiday
     ? "Schulferien"
-    : weekData.schoolYearBoundary
+    : data.schoolYearBoundary
     ? "Wahrscheinlich Schuljahrwechsel"
-    : weekData.allCancelled
+    : data.allCancelled
     ? "Alle Stunden abgesagt"
-    : formattedText(weekData);
+    : formattedText(data);
+  const text = weekText;
 
-  // Only offer IHK submission where it can actually succeed. A week is
-  // submittable if it already has an entry that isn't locked - genehmigt
-  // (approved, final) or warten_auf_genehmigung (sent, under review, not
-  // yours to edit while pending) both block editing - or if it's exactly
-  // the next sequential week "Neuer Eintrag" would create; it can never
-  // target an arbitrary week or skip ahead. Weeks further into the
-  // backlog get a disabled button explaining why, instead of just
-  // failing after a click.
+  const ihkEntry = ihkStatus[wid];
   const nextWeek = nextSubmittableWeek();
   let ihkState, ihkReason;
-  if (selected > currentWeek) {
-    ihkState = "hidden"; // future week - nothing to report yet, IHK can't take it
+
+  if (wid > currentWeek) {
+    ihkState = "hidden";
   } else if (ihkEntry) {
     if (ihkEntry.status === "genehmigt") {
       ihkState = "hidden";
+      $("scrapeBtn").hidden = true;
     } else if (ihkEntry.status === "warten_auf_genehmigung") {
       ihkState = "disabled";
       ihkReason = "Wartet auf Genehmigung durch Betreuer";
+      $("scrapeBtn").hidden = false;
     } else {
-      ihkState = "enabled"; // in_bearbeitung, abgelehnt (Korrektur möglich), unknown
+      ihkState = "enabled";
+      $("scrapeBtn").hidden = false;
     }
-  } else if (selected === nextWeek || (nextWeek === null && selected === currentWeek)) {
+  } else if (wid === nextWeek || (nextWeek === null && wid === currentWeek)) {
     ihkState = "enabled";
-  } else if (nextWeek && selected > nextWeek) {
+    $("scrapeBtn").hidden = false;
+  } else if (nextWeek && wid > nextWeek) {
     ihkState = "disabled";
     ihkReason = `Zuerst ${nextWeek} einreichen`;
+    $("scrapeBtn").hidden = false;
   } else {
-    ihkState = "hidden"; // anomalous historical gap before nextWeek, or genehmigt
+    ihkState = "hidden";
+    $("scrapeBtn").hidden = false;
   }
 
-  // One connected card: the two writable fields (when submission is
-  // actually possible) followed by the read-only Berufsschule text, which
-  // is always shown/copyable regardless of IHK state - it's just "what
-  // WebUntis has," useful even for a locked, historical week.
+  el.innerHTML = noSchedule ? "" : days.map((d) => `<div class="day"><h2>${d.date}</h2>${d.lessons.map((l) => `<div class="lesson"><div class="head"><span class="subj">${l.subjectLong || l.subject}</span><span class="time">${l.times}</span></div><div class="teacher">${l.teacher || ""}</div>` + (l.content ? `<div class="content">${l.content}</div>` : `<div class="empty">(kein Inhalt)</div>`) + `</div>`).join("")}</div>`).join("");
+
   if (text) {
     const showForm = ihkState !== "hidden";
-    // A genehmigt (locked) week can't be edited/resubmitted anymore, so
-    // there's no pre-fill-before-submit risk here (see loadWeek()'s
-    // one-way-flow note, which still applies to the editable form above) -
-    // this only ever shows the one-time archived snapshot from
-    // backfill_ihk_history.py, not a live IHK fetch.
-    const hist = !showForm ? ihkHistory[selected] : null;
+    const hist = !showForm ? ihkHistory[wid] : null;
     el.insertAdjacentHTML("afterbegin", `
       <div class="summary ihk-form">
         ${showForm ? `
@@ -282,6 +638,7 @@ function renderWeek() {
         ` : `<h2>Berufsschule</h2>`}
         <pre id="berufsschuleText"></pre>
       </div>`);
+
     $("berufsschuleText").textContent = text;
     if (showForm) {
       $("ihkField1").value = ihkFields.ausbinhalt1;
@@ -290,82 +647,16 @@ function renderWeek() {
       $("ihkHist1").textContent = hist.ausbinhalt1 || "–";
       $("ihkHist2").textContent = hist.ausbinhalt2 || "–";
     }
-    $("copyBtn").hidden = false;
-    $("copyBtn").onclick = async () => {
-      await navigator.clipboard.writeText(text);
-      setStatus("Text kopiert.", "ok");
-      setTimeout(() => setStatus(""), 2000);
-    };
-  } else {
-    $("copyBtn").hidden = true;
+
+    if (text && ihkState !== "hidden") {
+      const btn = $("ihkBtn");
+      btn.hidden = false;
+      btn.disabled = ihkState === "disabled";
+      btn.title = ihkReason || "";
+    } else {
+      $("ihkBtn").hidden = true;
+    }
   }
-
-  if (text && ihkState !== "hidden") {
-    const btn = $("ihkBtn");
-    btn.hidden = false;
-    btn.disabled = ihkState === "disabled";
-    btn.title = ihkReason || "";
-    btn.onclick = async () => {
-      btn.disabled = true;
-      setStatus(`Übertrage ${selected} an IHK…`);
-      try {
-        const res = await fetch("/api/submit-ihk", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            week: selected,
-            text,
-            // blank -> null ("not specified"), so the backend preserves
-            // whatever's already on IHK instead of clobbering it with "".
-            ausbinhalt1: $("ihkField1").value.trim() || null,
-            ausbinhalt2: $("ihkField2").value.trim() || null,
-          }),
-        });
-        const body = await res.json();
-        if (!res.ok) throw new Error(body.detail || res.statusText);
-        setStatus("Bei IHK gespeichert.", "ok");
-        await refreshIhkStatus();
-        await loadWeek(selected); // re-render picks the correct next-button state itself
-      } catch (e) {
-        setStatus("Fehler: " + e.message, "err");
-        btn.disabled = false;
-      }
-    };
-  } else {
-    $("ihkBtn").hidden = true;
-  }
-}
-
-async function loadWeek(id) {
-  // Status messages (e.g. "Bei IHK gespeichert.") belong to the week they
-  // were produced for - only clear on an actual week switch, not on the
-  // same-week reload that scrape/submit success handlers trigger right
-  // after setting their own message (which would otherwise wipe it
-  // immediately).
-  if (id !== selected) setStatus("");
-  selected = id;
-  weekData = null;
-  // Pre-fill from OUR OWN local record of what was last typed+submitted for
-  // this week (ihkFieldsCache) - NOT fetched from the IHK portal. Data still
-  // flows one-way, this site -> IHK: we never read ausbinhalt1/2 content back
-  // FROM tibrosBB (see sync_status()'s docstring). ihkFieldsCache is purely
-  // local memory of this app's own input, written server-side by
-  // save_local_fields() only after a submit to IHK actually succeeds -
-  // distinct from ihkStatus, which stays portal-truth-only.
-  const cached = ihkFieldsCache[id];
-  ihkFields = { ausbinhalt1: cached?.ausbinhalt1 ?? "", ausbinhalt2: cached?.ausbinhalt2 ?? "" };
-  const res = await fetch(`/api/weeks/${id}`);
-  if (res.ok) weekData = await res.json();
-  renderSelect();
-  renderWeek();
-}
-
-async function refreshWeeks() {
-  const res = await fetch("/api/weeks");
-  const data = await res.json();
-  weeks = data.weeks;
-  currentWeek = data.current;
-  return data.current;
 }
 
 async function refreshIhkStatus() {
@@ -380,39 +671,91 @@ async function refreshIhkHistory() {
   ihkHistory = res.ok ? await res.json() : {};
 }
 
-$("prev").onclick = () => loadWeek(shiftWeek(selected, -1));
-$("next").onclick = () => loadWeek(shiftWeek(selected, 1));
-$("weekSelect").onchange = (e) => loadWeek(e.target.value);
+async function init() {
+  try {
+    const res = await fetch("/api/weeks");
+    const json = await res.json();
+    weeks = json.weeks;
+    currentWeek = json.current;
+    selected = currentWeek;
+    renderSelect();
 
+    for (const wk of weeks) {
+      const weekData = await fetch(`/api/weeks/${wk}`).then(r => r.json());
+      localStorage.setItem(`week:${wk}`, JSON.stringify(weekData));
+      localStorage.setItem(`scrapedAt:${wk}`, new Date().toISOString());
+    }
+
+    await refreshIhkStatus();
+    await refreshIhkHistory();
+    loadWeek(selected);
+  } catch (err) { setStatus("Fehler: " + err.message, "err"); }
+}
+
+$("prev").onclick = () => { selected = shiftWeek(selected, -1); loadWeek(selected); };
+$("next").onclick = () => { selected = shiftWeek(selected, +1); loadWeek(selected); };
+$("weekSelect").onchange = (e) => loadWeek(e.target.value);
 $("scrapeBtn").onclick = async () => {
   const btn = $("scrapeBtn");
   btn.disabled = true;
   setStatus("Daten werden abgerufen…");
   try {
-    const res = await fetch("/api/scrape", {
+    const res = await fetch("/api/scrape", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({week: selected}) });
+    if (res.ok) {
+      const data = await res.json();
+      localStorage.setItem(`week:${data.week}`, JSON.stringify(data));
+      localStorage.setItem(`scrapedAt:${data.week}`, new Date().toISOString());
+      if (!weeks.includes(data.week)) weeks.push(data.week);
+      renderSelect();
+      await refreshIhkStatus();
+      loadWeek(selected);
+      setStatus("Abgerufen", "ok");
+    } else {
+      const err = await res.json();
+      setStatus("Fehler: " + (err.detail || err.message || "Abrufen fehlgeschlagen"), "err");
+    }
+  } catch (err) { setStatus("Fehler: " + err.message, "err"); }
+  finally { btn.disabled = false; }
+};
+
+$("ihkBtn").onclick = async () => {
+  const field1 = $("ihkField1");
+  const field2 = $("ihkField2");
+  if (!field1 || !field2) {
+    setStatus("Fehler: Form nicht verfügbar (Week gelöst)", "err");
+    return;
+  }
+
+  const btn = $("ihkBtn");
+  btn.disabled = true;
+  setStatus(`Übertrage ${selected} an IHK…`);
+  try {
+    const text = weekText;
+    const val1 = field1.value.trim();
+    const val2 = field2.value.trim();
+    const ausbinhalt1 = val1 ? val1 : null;
+    const ausbinhalt2 = val2 ? val2 : null;
+
+    const res = await fetch("/api/submit-ihk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ week: selected }),
+      body: JSON.stringify({ week: selected, text, ausbinhalt1, ausbinhalt2 })
     });
+
     const body = await res.json();
     if (!res.ok) throw new Error(body.detail || res.statusText);
-    setStatus("Daten abgerufen.", "ok");
-    await refreshWeeks();
+    setStatus("Bei IHK gespeichert.", "ok");
     await refreshIhkStatus();
-    await loadWeek(selected);
+    await refreshIhkHistory();
+    loadWeek(selected);
   } catch (e) {
     setStatus("Fehler: " + e.message, "err");
-  } finally {
     btn.disabled = false;
   }
 };
 
-(async () => {
-  const current = await refreshWeeks();
-  await refreshIhkStatus();
-  await refreshIhkHistory();
-  await loadWeek(weeks.includes(current) ? current : (weeks.at(-1) || current));
-})();
+init();
 </script>
+
 </body>
 </html>

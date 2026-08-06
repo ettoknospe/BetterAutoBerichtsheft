@@ -673,6 +673,73 @@ The app is designed to be lightweight:
 - The app does not use authentication. Run it only on a private network or behind a VPN.
 - Do not share `.env` files in version control systems
 
+## Multi-User Setup
+
+This app is now multi-user with login/registration and per-user WebUntis/IHK credentials.
+
+### First Migration (Single-Tenant → Multi-User)
+
+On first `docker compose up -d` after updating to multi-user:
+
+1. Generate a `SECRET_ENCRYPTION_KEY` for credential encryption:
+   ```bash
+   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+   ```
+   Copy the output into `.env` as `SECRET_ENCRYPTION_KEY=...`
+
+2. If you have a legacy single-tenant `.env` with `UNTIS_USER`/`UNTIS_PASS`:
+   - Set `ADMIN_PASSWORD=somepassword` in `.env`
+   - On first startup, the migration will auto-create an admin account and move your existing data files to that user's folder
+   - The app will print a summary to the logs (`docker compose logs`)
+
+3. If starting fresh (no legacy `.env`):
+   - Set `ADMIN_PASSWORD=somepassword` in `.env` (or leave it unset and run `python -m app.create_admin` after startup)
+   - On first startup, the admin account is created and you can log in at `/login.html`
+
+### Post-Migration Cleanup
+
+Once the migration has completed successfully:
+
+1. **Blank the `.env` legacy credentials** — they're no longer read for any real request path, only for the test/fallback code path:
+   ```bash
+   # In .env, comment these out or delete them:
+   #UNTIS_USER=
+   #UNTIS_PASS=
+   #IHK_USER=
+   #IHK_PASS=
+   ```
+   This prevents accidental credential leaks if the `.env` file is ever exposed.
+
+2. Verify the migration worked:
+   - Log in at `http://localhost:8001/login.html` with the admin username/password
+   - Check `data/app.db` exists (the SQLite database)
+   - Check `data/{user_id}/` folders exist with your migrated week files
+   - Existing scraped weeks should be visible after login
+
+### Creating Additional User Accounts
+
+Once logged in as admin:
+
+1. Go to **Settings** (top nav) → **Benutzer verwalten** (Manage Users)
+2. Fill in username, password, optionally mark as admin
+3. Click "Erstellen" (Create)
+
+Or via CLI (if needed):
+```bash
+python -m app.create_admin
+```
+
+### Setting WebUntis/IHK Credentials Per-User
+
+Each user logs in with their own app login, then:
+
+1. Go to **Settings** (top nav)
+2. Fill in their WebUntis host, school, username, password
+3. Optionally set IHK tibrosBB credentials if they want to use the submit feature
+4. Click "Speichern" (Save)
+
+Each user's credentials are encrypted at rest with `SECRET_ENCRYPTION_KEY`. The scheduler scrapes for each user independently based on their own `SCRAPE_DAY`/`SCRAPE_TIME` settings.
+
 ## Contact and Support
 
 For questions or problems:

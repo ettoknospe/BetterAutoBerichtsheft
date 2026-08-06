@@ -16,8 +16,9 @@ import logging
 
 import requests
 
-import config
-from storage import _dump_debug
+from . import config
+from .settings import UserSettings
+from .storage import _dump_debug
 
 log = logging.getLogger("scraper")
 
@@ -33,10 +34,11 @@ class ScrapeError(Exception):
 
 
 class UntisClient:
-    def __init__(self):
-        if not config.UNTIS_USER or not config.UNTIS_PASS:
+    def __init__(self, settings: UserSettings | None = None):
+        self.cfg = settings or UserSettings.from_config()
+        if not self.cfg.UNTIS_USER or not self.cfg.UNTIS_PASS:
             raise ScrapeError("UNTIS_USER / UNTIS_PASS not set")
-        self.base = f"https://{config.UNTIS_HOST}"
+        self.base = f"https://{self.cfg.UNTIS_HOST}"
         self.s = requests.Session()
         self.s.headers["User-Agent"] = "berichtsheft/1.0"
         self.person_id = None
@@ -45,14 +47,14 @@ class UntisClient:
     def _rpc(self, method, params):
         r = self.s.post(
             f"{self.base}/WebUntis/jsonrpc.do",
-            params={"school": config.UNTIS_SCHOOL},
+            params={"school": self.cfg.UNTIS_SCHOOL},
             json={"id": "bab", "jsonrpc": "2.0", "method": method, "params": params},
             timeout=30,
         )
         r.raise_for_status()
         data = r.json()
         if "error" in data:
-            _dump_debug(f"rpc-{method}", data)
+            _dump_debug(f"rpc-{method}", data, data_dir=self.cfg.DATA_DIR)
             err = data["error"]
             code = err.get("code") if isinstance(err, dict) else None
             raise ScrapeError(f"WebUntis RPC {method} failed: {err}", code=code)
@@ -60,7 +62,7 @@ class UntisClient:
 
     def login(self):
         result = self._rpc(
-            "authenticate", {"user": config.UNTIS_USER, "password": config.UNTIS_PASS, "client": "berichtsheft"}
+            "authenticate", {"user": self.cfg.UNTIS_USER, "password": self.cfg.UNTIS_PASS, "client": "berichtsheft"}
         )
         self.person_id = result.get("personId")
         if not self.person_id:
