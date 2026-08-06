@@ -284,10 +284,9 @@
 
   .lesson { padding: .5rem 0; border-top: 1px solid var(--border); }
   .lesson:first-of-type { border-top: none; }
-  .lesson .head { display: flex; gap: .6rem; align-items: baseline; justify-content: space-between; }
+  .lesson .head { display: flex; gap: .6rem; align-items: baseline; margin-bottom: .4rem; }
   .lesson .subj { font-weight: 600; }
-  .lesson .time { color: var(--text-muted); font-size: .8rem; }
-  .lesson .teacher { color: var(--text-muted); font-size: .85rem; margin-bottom: .4rem; }
+  .lesson .meta { color: var(--text-muted); font-size: .8rem; }
   .lesson .content { white-space: pre-wrap; margin-top: .15rem; }
   .lesson .empty { color: var(--text-muted); font-style: italic; }
 
@@ -456,7 +455,30 @@ function toggleSidebar() {
   localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
 }
 
+function clearWeekCache() {
+  // week:*/scrapedAt:* are keyed only by week id, not by account - on a
+  // shared browser a different user must never see a previous account's
+  // cached lesson content. See ensureCacheOwnership() for when this runs.
+  for (const key of Object.keys(localStorage)) {
+    if (key.startsWith('week:') || key.startsWith('scrapedAt:')) {
+      localStorage.removeItem(key);
+    }
+  }
+}
+
+async function ensureCacheOwnership() {
+  const res = await fetch('/api/auth/whoami');
+  if (!res.ok) return; // auth guard already redirects to /login.html
+  const { username } = await res.json();
+  if (localStorage.getItem('cacheOwner') !== username) {
+    clearWeekCache();
+    localStorage.setItem('cacheOwner', username);
+  }
+}
+
 function logout() {
+  clearWeekCache();
+  localStorage.removeItem('cacheOwner');
   fetch('/api/auth/logout', { method: 'POST' }).then(() => {
     window.location.href = '/login.html';
   });
@@ -471,6 +493,7 @@ const $ = (id) => document.getElementById(id);
 let weeks = [];
 let selected = null;
 let currentWeek = null;
+let startWeek = null;
 let ihkStatus = {};
 let ihkHistory = {};
 let ihkFieldsCache = {};
@@ -507,6 +530,13 @@ function shiftWeek(id, delta) {
 
 function fmtShort(iso) { const [y,m,d] = iso.split("-"); return `${d}.${m}.`; }
 
+const WEEKDAYS_DE = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+function fmtDayHeading(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const weekday = WEEKDAYS_DE[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${weekday}, ${fmtShort(iso)}`;
+}
+
 function nextSubmittableWeek() {
   const known = Object.keys(ihkStatus);
   if (!known.length) return null;
@@ -535,7 +565,7 @@ function renderSelect() {
   const today = new Date().toISOString().slice(0, 10);
   const sorted = [...all].sort().filter(w => {
     const [s, e] = weekBounds(w);
-    return s <= today;
+    return s <= today && (!startWeek || w >= startWeek);
   });
   $("weekSelect").innerHTML = sorted.map((w) => {
     const [s, e] = weekBounds(w);
@@ -559,6 +589,15 @@ function formattedText(data) {
 function loadWeek(wid) {
   selected = wid;
   renderSelect();
+
+  // Can navigate forward up to the latest (current) ISO week, never past
+  // it - there's nothing to show beyond "now". Set unconditionally here
+  // (not inside renderWeek(), which has early returns for no-data weeks
+  // that would skip it) so the cap holds no matter what the selected
+  // week contains. Same reasoning for the backward cap at the user's
+  // configured Berichtsheft start date (Settings > Scraper).
+  $("next").disabled = !currentWeek || selected >= currentWeek;
+  $("prev").disabled = !!startWeek && selected <= startWeek;
 
   const cached = ihkFieldsCache[wid];
   ihkFields = { ausbinhalt1: cached?.ausbinhalt1 ?? "", ausbinhalt2: cached?.ausbinhalt2 ?? "" };
@@ -624,7 +663,7 @@ function renderWeek(data, wid) {
     $("scrapeBtn").hidden = false;
   }
 
-  el.innerHTML = noSchedule ? "" : days.map((d) => `<div class="day"><h2>${d.date}</h2>${d.lessons.map((l) => `<div class="lesson"><div class="head"><span class="subj">${l.subjectLong || l.subject}</span><span class="time">${l.times}</span></div><div class="teacher">${l.teacher || ""}</div>` + (l.content ? `<div class="content">${l.content}</div>` : `<div class="empty">(kein Inhalt)</div>`) + `</div>`).join("")}</div>`).join("");
+  el.innerHTML = noSchedule ? "" : days.map((d) => `<div class="day"><h2>${fmtDayHeading(d.date)}</h2>${d.lessons.map((l) => `<div class="lesson"><div class="head"><span class="subj">${l.subjectLong || l.subject}</span><span class="meta">${l.start}–${l.end}${l.teacher ? " · " + l.teacher : ""}</span></div>` + (l.content ? `<div class="content">${l.content}</div>` : `<div class="empty">(kein Inhalt)</div>`) + `</div>`).join("")}</div>`).join("");
 
   if (text) {
     const showForm = ihkState !== "hidden";
@@ -699,10 +738,12 @@ async function loadUserSettings() {
 
 async function init() {
   try {
+    await ensureCacheOwnership();
     const res = await fetch("/api/weeks");
     const json = await res.json();
     weeks = json.weeks;
     currentWeek = json.current;
+    startWeek = json.startWeek;
     selected = currentWeek;
     renderSelect();
 

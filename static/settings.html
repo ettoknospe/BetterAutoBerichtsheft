@@ -222,14 +222,8 @@
             color: #d32f2f;
             display: block;
         }
-        .admin-section {
-            display: none;
-        }
         .admin-tab {
             display: none;
-        }
-        .admin-section.show {
-            display: block;
         }
         .users-table {
             width: 100%;
@@ -361,6 +355,16 @@
                         </div>
                     </div>
                 </fieldset>
+                <fieldset>
+                    <legend>Berichtsheft Start</legend>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="start_date">Erster Tag</label>
+                            <input type="date" id="start_date">
+                            <small>Wochen vor diesem Datum werden nicht angezeigt und k&ouml;nnen nicht abgerufen werden.</small>
+                        </div>
+                    </div>
+                </fieldset>
                 <button type="submit"><span class="spinner"></span>Save Schedule</button>
             </form>
         </div>
@@ -433,7 +437,7 @@
         </div>
 
         <!-- Admin Tab -->
-        <div id="admin" class="tab-content admin-section">
+        <div id="admin" class="tab-content">
             <div class="message" id="admin-msg"></div>
             <fieldset>
                 <legend>Create New User</legend>
@@ -490,7 +494,6 @@
                 // Show admin tab only for admins
                 if (currentUser.is_admin) {
                     document.querySelectorAll('.admin-tab').forEach(el => el.style.display = 'block');
-                    document.getElementById('admin').style.display = 'block';
                     await loadUsers();
                 }
 
@@ -510,6 +513,7 @@
 
                 document.getElementById('scrape_day').value = currentSettings.scrape_day || 'off';
                 document.getElementById('scrape_time').value = currentSettings.scrape_time || '18:00';
+                document.getElementById('start_date').value = currentSettings.start_date || '';
 
                 document.getElementById('ihk_host').value = currentSettings.ihk_host || '';
                 document.getElementById('ihk_user').value = currentSettings.ihk_user || '';
@@ -560,7 +564,8 @@
             e.preventDefault();
             await saveSettings('scraper', {
                 scrape_day: document.getElementById('scrape_day').value,
-                scrape_time: document.getElementById('scrape_time').value
+                scrape_time: document.getElementById('scrape_time').value,
+                start_date: document.getElementById('start_date').value
             }, e);
         }
 

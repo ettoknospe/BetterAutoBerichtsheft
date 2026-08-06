@@ -169,6 +169,7 @@
     <div class="form-group">
       <label for="endDate">Bis (z.B. 09.08.2026):</label>
       <input type="text" id="endDate" placeholder="09.08.2026">
+      <button type="button" id="endDateTodayBtn">Bis heute</button>
     </div>
     <button id="scrapeBtn">Alle Wochen abrufen</button>
     <div id="scrapeStatus"></div>
@@ -211,6 +212,13 @@ function dateToWeek(date) {
   return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
+$("endDateTodayBtn").onclick = () => {
+  const today = new Date();
+  const dd = String(today.getDate()).padStart(2, "0");
+  const mm = String(today.getMonth() + 1).padStart(2, "0");
+  $("endDate").value = `${dd}.${mm}.${today.getFullYear()}`;
+};
+
 $("scrapeBtn").onclick = async () => {
   const btn = $("scrapeBtn");
   const status = $("scrapeStatus");
@@ -235,6 +243,17 @@ $("scrapeBtn").onclick = async () => {
   btn.disabled = true;
   setStatus(status, "Rufe Wochen ab...", "loading");
 
+  const poll = setInterval(async () => {
+    try {
+      const res = await fetch("/api/bulkops/scrape-progress");
+      const p = await res.json();
+      if (p.total > 0) {
+        const pct = Math.round((p.current / p.total) * 100);
+        setStatus(status, `Rufe ab: ${p.current} / ${p.total} (${pct}%)${p.week ? " – " + p.week : ""}`, "loading");
+      }
+    } catch (e) { /* transient poll failure - next tick retries */ }
+  }, 500);
+
   try {
     const res = await fetch("/api/bulkops/scrape-weeks", {
       method: "POST",
@@ -249,6 +268,7 @@ $("scrapeBtn").onclick = async () => {
   } catch (e) {
     setStatus(status, `Fehler: ${e.message}`, "err");
   } finally {
+    clearInterval(poll);
     btn.disabled = false;
   }
 };

@@ -105,6 +105,9 @@ MIGRATIONS = [
         created_at  TEXT NOT NULL
     )
     """),
+    (13, """
+    ALTER TABLE user_settings ADD COLUMN start_date TEXT NOT NULL DEFAULT ''
+    """),
 ]
 
 

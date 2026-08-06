@@ -28,6 +28,26 @@ def _get_lock(user_id: int, kind: str) -> threading.Lock:
             _locks[key] = threading.Lock()
         return _locks[key]
 
+# Bulk-scrape progress, polled by the Datenimport page while a scrape runs.
+# Absent/missing key means "nothing running" - the frontend treats a 404-ish
+# empty response the same way, so no separate "not running" sentinel needed.
+_bulk_scrape_progress = {}
+
+
+def _iter_weeks(start: str, end: str):
+    """Yield YYYY-Www week ids from start to end inclusive, same increment
+    rule as bulkops_scrape_weeks() - kept in sync so the upfront total here
+    matches what the loop actually iterates."""
+    wk = start
+    while wk <= end:
+        yield wk
+        y, w = wk.split("-W")
+        w = int(w) + 1
+        if w > 53:
+            w = 1
+            y = int(y) + 1
+        wk = f"{y}-W{w:02d}"
+
 # Constants
 WEEK_RE = re.compile(r"^\d{4}-W\d{2}$")
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
@@ -81,6 +101,7 @@ class SettingsUpdateRequest(BaseModel):
     ihk_ausbabschnitt: str | None = None
     ihk_ausb_mail: str | None = None
     ihk_use_settings_for_abschnitt: bool | None = None
+    start_date: str | None = None
 
 # ===== Auth Endpoints =====
 
@@ -157,16 +178,23 @@ async def get_settings(user: auth.AuthedUser = Depends(auth.require_user)):
         "ihk_ausbabschnitt": row_dict["ihk_ausbabschnitt"],
         "ihk_ausb_mail": row_dict["ihk_ausb_mail"],
         "ihk_use_settings_for_abschnitt": bool(row_dict.get("ihk_use_settings_for_abschnitt", 1)),
+        "start_date": row_dict.get("start_date") or "",
     }
 
 @app.put("/api/me/settings")
 async def update_settings(req: SettingsUpdateRequest, user: auth.AuthedUser = Depends(auth.require_user)):
     """Update user's settings."""
+    if req.start_date:
+        try:
+            dt.date.fromisoformat(req.start_date)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="start_date must be YYYY-MM-DD")
+
     updates = {}
     for field in ["untis_host", "untis_school", "untis_user", "untis_pass",
                   "scrape_day", "scrape_time",
                   "ihk_host", "ihk_user", "ihk_pass", "ihk_ausbabschnitt", "ihk_ausb_mail",
-                  "ihk_use_settings_for_abschnitt"]:
+                  "ihk_use_settings_for_abschnitt", "start_date"]:
         val = getattr(req, field, None)
         if val is not None:
             updates[field] = val
@@ -277,7 +305,9 @@ def list_weeks(user: auth.AuthedUser = Depends(auth.require_user)):
     settings_row = db.get_user_settings(user.id)
     settings = db._row_to_settings(settings_row, user_row)
     weeks = storage.list_week_ids(settings.user_id)
-    return {"weeks": weeks, "current": scraper.current_week_id()}
+    start_date = dict(settings_row).get("start_date") or None
+    start_week = scraper.current_week_id(dt.date.fromisoformat(start_date)) if start_date else None
+    return {"weeks": weeks, "current": scraper.current_week_id(), "startWeek": start_week}
 
 @app.get("/api/weeks/{week_id}")
 def get_week(week_id: str, user: auth.AuthedUser = Depends(auth.require_user)):
@@ -398,29 +428,31 @@ def bulkops_scrape_weeks(req: BulkScrapeRequest, user: auth.AuthedUser = Depends
     settings_row = db.get_user_settings(user.id)
     settings = db._row_to_settings(settings_row, user_row)
 
+    weeks_list = list(_iter_weeks(req.startWeek, req.endWeek))
+    total = len(weeks_list)
     weeks_scraped = 0
-    wk = req.startWeek
-    while wk <= req.endWeek:
-        try:
-            lock = _get_lock(user.id, "scrape")
-            if not lock.acquire(blocking=False):
-                raise HTTPException(status_code=409, detail="scrape already running")
+    try:
+        for i, wk in enumerate(weeks_list, start=1):
+            _bulk_scrape_progress[user.id] = {"current": i, "total": total, "week": wk}
             try:
-                scraper.scrape_week(wk, settings=settings)
-                weeks_scraped += 1
-            finally:
-                lock.release()
-        except Exception as e:
-            log.warning("failed to scrape %s: %s", wk, e)
-        # Next week
-        y, w = wk.split("-W")
-        w = int(w) + 1
-        if w > 53:
-            w = 1
-            y = int(y) + 1
-        wk = f"{y}-W{w:02d}"
+                lock = _get_lock(user.id, "scrape")
+                if not lock.acquire(blocking=False):
+                    raise HTTPException(status_code=409, detail="scrape already running")
+                try:
+                    scraper.scrape_week(wk, settings=settings)
+                    weeks_scraped += 1
+                finally:
+                    lock.release()
+            except Exception as e:
+                log.warning("failed to scrape %s: %s", wk, e)
+        return {"weeks_scraped": weeks_scraped}
+    finally:
+        _bulk_scrape_progress.pop(user.id, None)
 
-    return {"weeks_scraped": weeks_scraped}
+@app.get("/api/bulkops/scrape-progress")
+def bulkops_scrape_progress(user: auth.AuthedUser = Depends(auth.require_user)):
+    """Polled by the Datenimport page while a bulk scrape is in flight."""
+    return _bulk_scrape_progress.get(user.id) or {"current": 0, "total": 0, "week": None}
 
 @app.post("/api/bulkops/backfill-ihk")
 def bulkops_backfill_ihk(req: BulkBackfillIhkRequest, user: auth.AuthedUser = Depends(auth.require_user)):
