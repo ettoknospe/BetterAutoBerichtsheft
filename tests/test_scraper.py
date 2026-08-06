@@ -5,6 +5,7 @@ import pytest
 
 from app import config
 from app import scraper
+from app import storage
 
 
 def test_hm_formats_untis_time():
@@ -39,15 +40,16 @@ def _period(date, subject, start, end, code=None, teacher="Teacher"):
 
 
 @pytest.fixture
-def fake_untis(monkeypatch, tmp_path):
-    """Stub out network I/O in UntisClient; redirect DATA_DIR to tmp_path."""
-    monkeypatch.setattr(config, "UNTIS_USER", "u")
-    monkeypatch.setattr(config, "UNTIS_PASS", "p")
-    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(config, "SUBJECT_FILTER", [])
+def fake_untis(monkeypatch, user_settings):
+    """Stub out network I/O in UntisClient; user_settings already carries
+    real UNTIS_USER/PASS seeded via the real PUT /api/me/settings call."""
     monkeypatch.setattr(scraper.UntisClient, "login", lambda self: None)
     monkeypatch.setattr(scraper.UntisClient, "logout", lambda self: None)
-    return tmp_path
+    return user_settings
+
+
+def _saved(user_settings, week_id):
+    return storage.load_week_data(user_settings.user_id, week_id)
 
 
 def test_scrape_week_merges_consecutive_same_content(monkeypatch, fake_untis):
@@ -65,7 +67,7 @@ def test_scrape_week_merges_consecutive_same_content(monkeypatch, fake_untis):
 
     monkeypatch.setattr(scraper.UntisClient, "teaching_content", fake_teaching_content)
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert len(result["days"]) == 1
     lessons = result["days"][0]["lessons"]
@@ -83,25 +85,7 @@ def test_scrape_week_merges_consecutive_same_content(monkeypatch, fake_untis):
     assert lessons[1]["start"] == "09:30"
     assert lessons[1]["end"] == "10:15"
 
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == result
-
-
-def test_scrape_week_applies_subject_filter(monkeypatch, fake_untis):
-    monday, _ = scraper.week_bounds("2026-W29")
-    periods = [
-        _period(monday, "MATH", 800, 845),
-        _period(monday, "BIO", 930, 1015),
-    ]
-    monkeypatch.setattr(scraper.UntisClient, "timetable", lambda self, s, e: periods)
-    monkeypatch.setattr(scraper.UntisClient, "teaching_content", lambda self, d, s, e: "")
-    monkeypatch.setattr(config, "SUBJECT_FILTER", ["BIO"])
-
-    result = scraper.scrape_week("2026-W29")
-
-    lessons = result["days"][0]["lessons"]
-    assert len(lessons) == 1
-    assert lessons[0]["subject"] == "BIO"
+    assert _saved(fake_untis, "2026-W29") == result
 
 
 def test_scrape_week_no_lessons_returns_empty_days_without_saving(monkeypatch, fake_untis):
@@ -109,11 +93,11 @@ def test_scrape_week_no_lessons_returns_empty_days_without_saving(monkeypatch, f
     monkeypatch.setattr(scraper.UntisClient, "holidays", lambda self: [])  # not a holiday either
     monkeypatch.setattr(scraper.UntisClient, "school_years", lambda self: [])  # not a gap either
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["days"] == []
     assert "holiday" not in result
-    assert not (fake_untis / "2026-W29.json").exists()
+    assert _saved(fake_untis, "2026-W29") is None
 
 
 def test_untis_client_requires_credentials(monkeypatch):
@@ -174,12 +158,11 @@ def test_scrape_week_full_holiday_is_saved_and_flagged(monkeypatch, fake_untis):
         lambda self: [{"startDate": int(monday.strftime("%Y%m%d")), "endDate": int(sunday.strftime("%Y%m%d"))}],
     )
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["days"] == []
     assert result["holiday"] is True
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == result
+    assert _saved(fake_untis, "2026-W29") == result
 
 
 def test_scrape_week_partial_holiday_not_flagged_and_not_saved(monkeypatch, fake_untis):
@@ -193,10 +176,10 @@ def test_scrape_week_partial_holiday_not_flagged_and_not_saved(monkeypatch, fake
     )
     monkeypatch.setattr(scraper.UntisClient, "school_years", lambda self: [])  # not a gap either
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert "holiday" not in result
-    assert not (fake_untis / "2026-W29.json").exists()
+    assert _saved(fake_untis, "2026-W29") is None
 
 
 def test_scrape_week_does_not_call_holidays_when_periods_present(monkeypatch, fake_untis):
@@ -207,7 +190,7 @@ def test_scrape_week_does_not_call_holidays_when_periods_present(monkeypatch, fa
     calls = []
     monkeypatch.setattr(scraper.UntisClient, "holidays", lambda self: calls.append(1) or [])
 
-    scraper.scrape_week("2026-W29")
+    scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert calls == []
 
@@ -240,12 +223,11 @@ def test_scrape_week_school_year_boundary_not_confirmed_holiday_is_saved(monkeyp
     monkeypatch.setattr(scraper.UntisClient, "holidays", lambda self: [])  # not actually a holiday
     monkeypatch.setattr(scraper.UntisClient, "school_years", lambda self: [])  # can't confirm the gap either
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["schoolYearBoundary"] is True
     assert "holiday" not in result
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == result
+    assert _saved(fake_untis, "2026-W29") == result
 
 
 def test_scrape_week_school_year_boundary_but_confirmed_holiday_prefers_holiday_flag(monkeypatch, fake_untis):
@@ -257,7 +239,7 @@ def test_scrape_week_school_year_boundary_but_confirmed_holiday_prefers_holiday_
         lambda self: [{"startDate": int(monday.strftime("%Y%m%d")), "endDate": int(sunday.strftime("%Y%m%d"))}],
     )
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["holiday"] is True
     assert "schoolYearBoundary" not in result
@@ -265,16 +247,15 @@ def test_scrape_week_school_year_boundary_but_confirmed_holiday_prefers_holiday_
 
 def test_scrape_week_school_year_boundary_does_not_overwrite_existing_data(monkeypatch, fake_untis):
     existing = {"week": "2026-W29", "days": [{"date": "2026-07-13", "lessons": []}]}
-    (fake_untis / "2026-W29.json").write_text(json.dumps(existing))
+    storage.save_week_data(fake_untis.user_id, "2026-W29", existing)
     monkeypatch.setattr(scraper.UntisClient, "timetable", _raise_boundary)
     monkeypatch.setattr(scraper.UntisClient, "holidays", lambda self: [])
     monkeypatch.setattr(scraper.UntisClient, "school_years", lambda self: [])
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["schoolYearBoundary"] is True
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == existing  # untouched on disk
+    assert _saved(fake_untis, "2026-W29") == existing  # untouched
 
 
 def test_scrape_week_other_scrape_errors_still_propagate(monkeypatch, fake_untis):
@@ -284,7 +265,7 @@ def test_scrape_week_other_scrape_errors_still_propagate(monkeypatch, fake_untis
     monkeypatch.setattr(scraper.UntisClient, "timetable", raise_other)
 
     with pytest.raises(scraper.ScrapeError):
-        scraper.scrape_week("2026-W29")
+        scraper.scrape_week("2026-W29", settings=fake_untis)
 
 
 def _raise_holidays_error(self):
@@ -296,12 +277,11 @@ def test_scrape_week_boundary_saved_even_if_holidays_call_also_fails(monkeypatch
     monkeypatch.setattr(scraper.UntisClient, "holidays", _raise_holidays_error)
     monkeypatch.setattr(scraper.UntisClient, "school_years", _raise_holidays_error)  # totally unconfirmable
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["schoolYearBoundary"] is True
     assert "holiday" not in result
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == result
+    assert _saved(fake_untis, "2026-W29") == result
 
 
 def test_scrape_week_plain_empty_week_not_saved_if_holidays_call_fails(monkeypatch, fake_untis):
@@ -309,11 +289,11 @@ def test_scrape_week_plain_empty_week_not_saved_if_holidays_call_fails(monkeypat
     monkeypatch.setattr(scraper.UntisClient, "holidays", _raise_holidays_error)
     monkeypatch.setattr(scraper.UntisClient, "school_years", lambda self: [])  # not a gap either
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert "holiday" not in result
     assert "schoolYearBoundary" not in result
-    assert not (fake_untis / "2026-W29.json").exists()
+    assert _saved(fake_untis, "2026-W29") is None
 
 
 def test_school_years_returns_list(monkeypatch):
@@ -370,12 +350,11 @@ def test_scrape_week_boundary_confirmed_by_school_year_gap_is_flagged_holiday(mo
         ],
     )
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["holiday"] is True
     assert "schoolYearBoundary" not in result
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == result
+    assert _saved(fake_untis, "2026-W29") == result
 
 
 def test_scrape_week_boundary_gap_confirmed_does_not_overwrite_existing_data(monkeypatch, fake_untis):
@@ -383,7 +362,7 @@ def test_scrape_week_boundary_gap_confirmed_does_not_overwrite_existing_data(mon
     prev_year_end = monday - dt.timedelta(days=1)
     next_year_start = sunday + dt.timedelta(days=1)
     existing = {"week": "2026-W29", "days": [{"date": "2026-07-13", "lessons": []}]}
-    (fake_untis / "2026-W29.json").write_text(json.dumps(existing))
+    storage.save_week_data(fake_untis.user_id, "2026-W29", existing)
     monkeypatch.setattr(scraper.UntisClient, "timetable", _raise_boundary)
     monkeypatch.setattr(scraper.UntisClient, "holidays", _raise_holidays_error)
     monkeypatch.setattr(
@@ -395,27 +374,24 @@ def test_scrape_week_boundary_gap_confirmed_does_not_overwrite_existing_data(mon
         ],
     )
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["holiday"] is True
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == existing  # untouched on disk
+    assert _saved(fake_untis, "2026-W29") == existing  # untouched
 
 
-def test_has_real_lessons_false_for_missing_file(tmp_path):
-    assert not scraper._has_real_lessons(tmp_path / "nope.json")
+def test_has_real_lessons_false_for_missing_file(user_settings):
+    assert not storage._has_real_lessons(user_settings.user_id, "2026-W29")
 
 
-def test_has_real_lessons_false_for_placeholder(tmp_path):
-    p = tmp_path / "w.json"
-    p.write_text(json.dumps({"days": [], "schoolYearBoundary": True}))
-    assert not scraper._has_real_lessons(p)
+def test_has_real_lessons_false_for_placeholder(user_settings):
+    storage.save_week_data(user_settings.user_id, "2026-W29", {"days": [], "schoolYearBoundary": True})
+    assert not storage._has_real_lessons(user_settings.user_id, "2026-W29")
 
 
-def test_has_real_lessons_true_for_real_data(tmp_path):
-    p = tmp_path / "w.json"
-    p.write_text(json.dumps({"days": [{"date": "x", "lessons": []}]}))
-    assert scraper._has_real_lessons(p)
+def test_has_real_lessons_true_for_real_data(user_settings):
+    storage.save_week_data(user_settings.user_id, "2026-W29", {"days": [{"date": "x", "lessons": []}]})
+    assert storage._has_real_lessons(user_settings.user_id, "2026-W29")
 
 
 def test_scrape_week_gap_confirmed_holiday_overwrites_stale_placeholder(monkeypatch, fake_untis):
@@ -430,7 +406,7 @@ def test_scrape_week_gap_confirmed_holiday_overwrites_stale_placeholder(monkeypa
         "days": [],
         "schoolYearBoundary": True,
     }
-    (fake_untis / "2026-W29.json").write_text(json.dumps(stale))
+    storage.save_week_data(fake_untis.user_id, "2026-W29", stale)
     monkeypatch.setattr(scraper.UntisClient, "timetable", _raise_boundary)
     monkeypatch.setattr(scraper.UntisClient, "holidays", _raise_holidays_error)
     monkeypatch.setattr(
@@ -442,11 +418,10 @@ def test_scrape_week_gap_confirmed_holiday_overwrites_stale_placeholder(monkeypa
         ],
     )
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["holiday"] is True
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == result  # stale guess got replaced with the better-informed answer
+    assert _saved(fake_untis, "2026-W29") == result  # stale guess got replaced with the better-informed answer
 
 
 def test_scrape_week_all_cancelled_periods_checks_holidays(monkeypatch, fake_untis):
@@ -465,7 +440,7 @@ def test_scrape_week_all_cancelled_periods_checks_holidays(monkeypatch, fake_unt
         lambda self: [{"startDate": int(monday.strftime("%Y%m%d")), "endDate": int(sunday.strftime("%Y%m%d"))}],
     )
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["holiday"] is True
     assert result["days"] == []
@@ -482,28 +457,26 @@ def test_scrape_week_all_cancelled_not_confirmed_holiday_is_flagged_all_cancelle
     monkeypatch.setattr(scraper.UntisClient, "holidays", lambda self: [])
     monkeypatch.setattr(scraper.UntisClient, "school_years", lambda self: [])  # not a gap either
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert "holiday" not in result
     assert result["allCancelled"] is True
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == result
+    assert _saved(fake_untis, "2026-W29") == result
 
 
 def test_scrape_week_all_cancelled_does_not_overwrite_existing_real_data(monkeypatch, fake_untis):
     existing = {"week": "2026-W29", "days": [{"date": "2026-07-13", "lessons": []}]}
-    (fake_untis / "2026-W29.json").write_text(json.dumps(existing))
+    storage.save_week_data(fake_untis.user_id, "2026-W29", existing)
     monday, _ = scraper.week_bounds("2026-W29")
     periods = [_period(monday, "MATH", 800, 845, code="cancelled")]
     monkeypatch.setattr(scraper.UntisClient, "timetable", lambda self, s, e: periods)
     monkeypatch.setattr(scraper.UntisClient, "holidays", lambda self: [])
     monkeypatch.setattr(scraper.UntisClient, "school_years", lambda self: [])
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert result["allCancelled"] is True
-    saved = json.loads((fake_untis / "2026-W29.json").read_text())
-    assert saved == existing  # untouched on disk
+    assert _saved(fake_untis, "2026-W29") == existing  # untouched
 
 
 def test_scrape_week_mixed_cancelled_and_real_periods_does_not_check_holidays(monkeypatch, fake_untis):
@@ -517,7 +490,7 @@ def test_scrape_week_mixed_cancelled_and_real_periods_does_not_check_holidays(mo
     calls = []
     monkeypatch.setattr(scraper.UntisClient, "holidays", lambda self: calls.append(1) or [])
 
-    result = scraper.scrape_week("2026-W29")
+    result = scraper.scrape_week("2026-W29", settings=fake_untis)
 
     assert calls == []
     assert len(result["days"][0]["lessons"]) == 1
@@ -530,26 +503,24 @@ def _raise_no_allowed_date(self, start, end):
 def test_scrape_week_no_allowed_date_is_saved_as_unavailable(monkeypatch, fake_untis):
     monkeypatch.setattr(scraper.UntisClient, "timetable", _raise_no_allowed_date)
 
-    result = scraper.scrape_week("2026-W38")
+    result = scraper.scrape_week("2026-W38", settings=fake_untis)
 
     assert result["unavailable"] is True
     assert result["days"] == []
     assert "holiday" not in result
     assert "schoolYearBoundary" not in result
-    saved = json.loads((fake_untis / "2026-W38.json").read_text())
-    assert saved == result
+    assert _saved(fake_untis, "2026-W38") == result
 
 
 def test_scrape_week_no_allowed_date_does_not_overwrite_existing_data(monkeypatch, fake_untis):
     existing = {"week": "2026-W38", "days": [{"date": "2026-09-14", "lessons": []}]}
-    (fake_untis / "2026-W38.json").write_text(json.dumps(existing))
+    storage.save_week_data(fake_untis.user_id, "2026-W38", existing)
     monkeypatch.setattr(scraper.UntisClient, "timetable", _raise_no_allowed_date)
 
-    result = scraper.scrape_week("2026-W38")
+    result = scraper.scrape_week("2026-W38", settings=fake_untis)
 
     assert result["unavailable"] is True
-    saved = json.loads((fake_untis / "2026-W38.json").read_text())
-    assert saved == existing  # untouched on disk
+    assert _saved(fake_untis, "2026-W38") == existing  # untouched
 
 
 def test_scrape_week_no_allowed_date_does_not_call_holidays_or_school_years(monkeypatch, fake_untis):
@@ -558,6 +529,6 @@ def test_scrape_week_no_allowed_date_does_not_call_holidays_or_school_years(monk
     monkeypatch.setattr(scraper.UntisClient, "holidays", lambda self: calls.append("holidays") or [])
     monkeypatch.setattr(scraper.UntisClient, "school_years", lambda self: calls.append("school_years") or [])
 
-    scraper.scrape_week("2026-W38")
+    scraper.scrape_week("2026-W38", settings=fake_untis)
 
     assert calls == []

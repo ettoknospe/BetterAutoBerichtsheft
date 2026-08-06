@@ -1,21 +1,18 @@
-import json
-
 import pytest
 
 from app import config
 from app import ihk_submitter
+from app import storage
 from app.ihk_client import IhkClient, IhkError
 
 
 @pytest.fixture
-def fake_ihk(monkeypatch, tmp_path):
-    """Stub out network I/O in IhkClient; redirect DATA_DIR to tmp_path."""
-    monkeypatch.setattr(config, "IHK_USER", "u")
-    monkeypatch.setattr(config, "IHK_PASS", "p")
-    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+def fake_ihk(monkeypatch, user_settings):
+    """Stub out network I/O in IhkClient; user_settings already carries
+    real IHK_USER/PASS seeded via the real PUT /api/me/settings call."""
     monkeypatch.setattr(IhkClient, "login", lambda self: None)
     monkeypatch.setattr(IhkClient, "logout", lambda self: None)
-    return tmp_path
+    return user_settings
 
 
 def test_untis_style_missing_credentials_raises(monkeypatch):
@@ -35,7 +32,7 @@ def test_submit_week_saves_into_existing_editable_entry(monkeypatch, fake_ihk):
     )
     monkeypatch.setattr(IhkClient, "create_next_entry", lambda self: pytest.fail("should not create a new entry"))
 
-    ihk_submitter.submit_week("2026-W29", "the text")
+    ihk_submitter.submit_week("2026-W29", "the text", settings=fake_ihk)
     assert saved == [(42, "the text", None, None)]
 
 
@@ -46,7 +43,7 @@ def test_submit_week_refuses_locked_entry(monkeypatch, fake_ihk):
     monkeypatch.setattr(IhkClient, "save_entry", lambda self, lfdnr, text: pytest.fail("should not save"))
 
     with pytest.raises(IhkError):
-        ihk_submitter.submit_week("2026-W29", "the text")
+        ihk_submitter.submit_week("2026-W29", "the text", settings=fake_ihk)
 
 
 def test_submit_week_creates_next_sequential_entry(monkeypatch, fake_ihk):
@@ -60,7 +57,7 @@ def test_submit_week_creates_next_sequential_entry(monkeypatch, fake_ihk):
         IhkClient, "save_entry", lambda self, lfdnr, text, a1=None, a2=None: saved.append((lfdnr, text, a1, a2))
     )
 
-    ihk_submitter.submit_week("2026-W29", "the text")
+    ihk_submitter.submit_week("2026-W29", "the text", settings=fake_ihk)
     assert saved == [(42, "the text", None, None)]
 
 
@@ -74,7 +71,7 @@ def test_submit_week_refuses_to_skip_ahead(monkeypatch, fake_ihk):
     monkeypatch.setattr(IhkClient, "save_entry", lambda self, lfdnr, text: pytest.fail("should not save"))
 
     with pytest.raises(IhkError):
-        ihk_submitter.submit_week("2026-W30", "the text")
+        ihk_submitter.submit_week("2026-W30", "the text", settings=fake_ihk)
 
 
 def test_submit_week_with_no_existing_entries_requires_current_as_next(monkeypatch, fake_ihk):
@@ -82,7 +79,7 @@ def test_submit_week_with_no_existing_entries_requires_current_as_next(monkeypat
     monkeypatch.setattr(IhkClient, "create_next_entry", lambda self: pytest.fail("should not create an entry"))
 
     with pytest.raises(IhkError):
-        ihk_submitter.submit_week("2026-W29", "the text")
+        ihk_submitter.submit_week("2026-W29", "the text", settings=fake_ihk)
 
 
 def test_sync_status_writes_and_classifies(monkeypatch, fake_ihk):
@@ -100,64 +97,54 @@ def test_sync_status_writes_and_classifies(monkeypatch, fake_ihk):
         },
     )
 
-    status = ihk_submitter.sync_status()
+    status = ihk_submitter.sync_status(settings=fake_ihk)
     assert status["2026-W28"]["status"] == "genehmigt"
     assert status["2026-W29"]["status"] == "in_bearbeitung"
     assert status["2026-W30"]["status"] == "unknown"
     assert set(status["2026-W28"].keys()) == {"lfdnr", "status", "syncedAt"}
-    assert (fake_ihk / "ihk_status.json").exists()
+    assert storage.load_ihk_status(fake_ihk.user_id) == status
 
 
 def test_load_status_round_trips(fake_ihk):
-    assert ihk_submitter.load_status() == {}
-    (fake_ihk / "ihk_status.json").write_text(json.dumps({"2026-W29": {"lfdnr": 42, "status": "genehmigt"}}))
-    assert ihk_submitter.load_status() == {"2026-W29": {"lfdnr": 42, "status": "genehmigt"}}
-
-
-def test_load_status_survives_corrupt_file(fake_ihk):
-    (fake_ihk / "ihk_status.json").write_text("not json")
-    assert ihk_submitter.load_status() == {}
+    assert ihk_submitter.load_status(settings=fake_ihk) == {}
+    storage.save_ihk_status(fake_ihk.user_id, {"2026-W29": {"lfdnr": 42, "status": "genehmigt"}})
+    assert ihk_submitter.load_status(settings=fake_ihk) == {"2026-W29": {"lfdnr": 42, "status": "genehmigt"}}
 
 
 def test_save_local_fields_round_trips(fake_ihk):
-    entry = ihk_submitter.save_local_fields("2026-W29", "worked on X", "training Y")
+    entry = ihk_submitter.save_local_fields("2026-W29", "worked on X", "training Y", settings=fake_ihk)
     assert entry["ausbinhalt1"] == "worked on X"
     assert entry["ausbinhalt2"] == "training Y"
     assert "savedAt" in entry
-    assert ihk_submitter.load_local_fields()["2026-W29"]["ausbinhalt1"] == "worked on X"
+    assert ihk_submitter.load_local_fields(settings=fake_ihk)["2026-W29"]["ausbinhalt1"] == "worked on X"
 
 
 def test_save_local_fields_preserves_field_when_omitted(fake_ihk):
-    ihk_submitter.save_local_fields("2026-W29", "worked on X", "training Y")
-    ihk_submitter.save_local_fields("2026-W29", "worked on X v2", None)
-    entry = ihk_submitter.load_local_fields()["2026-W29"]
+    ihk_submitter.save_local_fields("2026-W29", "worked on X", "training Y", settings=fake_ihk)
+    ihk_submitter.save_local_fields("2026-W29", "worked on X v2", None, settings=fake_ihk)
+    entry = ihk_submitter.load_local_fields(settings=fake_ihk)["2026-W29"]
     assert entry["ausbinhalt1"] == "worked on X v2"
     assert entry["ausbinhalt2"] == "training Y"  # untouched, not wiped by the omitted arg
 
 
 def test_save_local_fields_is_noop_when_both_none(fake_ihk):
-    ihk_submitter.save_local_fields("2026-W29", None, None)
-    assert not (fake_ihk / "ihk_fields.json").exists()
+    ihk_submitter.save_local_fields("2026-W29", None, None, settings=fake_ihk)
+    assert storage.load_local_fields(fake_ihk.user_id) == {}
 
 
 def test_load_local_fields_round_trips(fake_ihk):
-    assert ihk_submitter.load_local_fields() == {}
-    (fake_ihk / "ihk_fields.json").write_text(json.dumps({"2026-W29": {"ausbinhalt1": "a", "ausbinhalt2": "b"}}))
-    assert ihk_submitter.load_local_fields() == {"2026-W29": {"ausbinhalt1": "a", "ausbinhalt2": "b"}}
+    assert ihk_submitter.load_local_fields(settings=fake_ihk) == {}
+    storage.save_local_fields(fake_ihk.user_id, {"2026-W29": {"ausbinhalt1": "a", "ausbinhalt2": "b"}})
+    assert ihk_submitter.load_local_fields(settings=fake_ihk) == {"2026-W29": {"ausbinhalt1": "a", "ausbinhalt2": "b"}}
 
 
-def test_load_local_fields_survives_corrupt_file(fake_ihk):
-    (fake_ihk / "ihk_fields.json").write_text("not json")
-    assert ihk_submitter.load_local_fields() == {}
-
-
-def test_save_entry_raises_if_save_does_not_actually_persist(monkeypatch):
+def test_save_entry_raises_if_save_does_not_actually_persist(monkeypatch, user_settings):
     """Regression test for the real bug found while building this feature:
     a save can return HTTP 200 and echo the submitted text back without
     actually persisting it (stale ausbinhalt13 causes a silent server-side
     rejection). save_entry must always re-fetch and compare, not trust the
     POST response."""
-    client = IhkClient.__new__(IhkClient)  # bypass __init__, no real session needed
+    client = IhkClient(settings=user_settings)
     client.base = "https://example.invalid/tibrosBB"
 
     class FakeResponse:
@@ -193,12 +180,12 @@ def test_save_entry_raises_if_save_does_not_actually_persist(monkeypatch):
         client.save_entry(1, "new content")
 
 
-def test_save_entry_preserves_existing_ausbinhalt1_and_2_when_not_specified(monkeypatch):
+def test_save_entry_preserves_existing_ausbinhalt1_and_2_when_not_specified(monkeypatch, user_settings):
     """Regression test: save_entry() used to hardcode ausbinhalt1/2 as ""
     on every save, silently wiping any manually-entered content on the
     real IHK site. It must now preserve whatever's currently there when
     the caller doesn't explicitly pass a value."""
-    client = IhkClient.__new__(IhkClient)
+    client = IhkClient(settings=user_settings)
     client.base = "https://example.invalid/tibrosBB"
 
     class FakeResponse:
@@ -231,7 +218,6 @@ def test_save_entry_preserves_existing_ausbinhalt1_and_2_when_not_specified(monk
 
     assert captured_payloads[0]["ausbinhalt1"] == "existing work log entry"
     assert captured_payloads[0]["ausbinhalt2"] == "existing training entry"
-
 
 
 def test_create_next_entry_parses_draft_response():
@@ -299,14 +285,14 @@ _DRAFT = {
 }
 
 
-def test_save_entry_with_draft_diffs_list_entries_around_the_save():
+def test_save_entry_with_draft_diffs_list_entries_around_the_save(user_settings):
     """Regression test for the actual live bug: create_next_entry() alone
     never changes list_entries() - the portal only persists on save - so
     the before/after diff to discover the newly-assigned lfdnr must
     happen around the SAVE POST, not around 'Neuer Eintrag' itself
     (that's what produced "expected exactly one new entry ... got set()"
     in production)."""
-    client = IhkClient.__new__(IhkClient)
+    client = IhkClient(settings=user_settings)
     client.base = "https://example.invalid/tibrosBB"
 
     class FakeResponse:
@@ -330,7 +316,7 @@ def test_save_entry_with_draft_diffs_list_entries_around_the_save():
             return base  # before the save - draft week not there yet
         return {**base, "2026-W30": {"lfdnr": 9999999, "status": "in Bearbeitung bei Azubi"}}
 
-    import ihk_client as ihk_client_module
+    from app import ihk_client as ihk_client_module
 
     original = ihk_client_module.IhkClient.list_entries
     ihk_client_module.IhkClient.list_entries = fake_list_entries
@@ -344,10 +330,10 @@ def test_save_entry_with_draft_diffs_list_entries_around_the_save():
     assert len(call_count) == 2  # once before, once after the save POST
 
 
-def test_save_entry_raises_if_draft_save_creates_no_new_entry():
+def test_save_entry_raises_if_draft_save_creates_no_new_entry(user_settings):
     """Same scenario, but the diff genuinely finds nothing new - must
     fail loudly rather than guess a lfdnr."""
-    client = IhkClient.__new__(IhkClient)
+    client = IhkClient(settings=user_settings)
     client.base = "https://example.invalid/tibrosBB"
 
     class FakeResponse:
@@ -364,7 +350,7 @@ def test_save_entry_raises_if_draft_save_creates_no_new_entry():
 
     same_entries = {"2026-W29": {"lfdnr": 2774528, "status": "in Bearbeitung bei Azubi"}}
 
-    import ihk_client as ihk_client_module
+    from app import ihk_client as ihk_client_module
 
     original = ihk_client_module.IhkClient.list_entries
     ihk_client_module.IhkClient.list_entries = lambda self: dict(same_entries)
