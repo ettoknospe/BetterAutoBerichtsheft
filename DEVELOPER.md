@@ -4,80 +4,88 @@ This document explains how to develop and maintain Berichtsheft.
 
 ## About Berichtsheft
 
-Berichtsheft is a web application. It gets teaching content from WebUntis. WebUntis is a school scheduling system.
+Berichtsheft is a multi-user web application. It gets teaching content from
+WebUntis (a school scheduling system) and can send that content to the IHK
+apprenticeship logbook portal (tibrosBB), saving you from copy-pasting it
+there by hand.
 
-The app can also send that teaching content to the IHK apprenticeship logbook portal (tibrosBB). This saves you from copy-pasting it there by hand.
-
-The app uses only HTTP and JSON-RPC. No browser automation (no Playwright, no Selenium) for either WebUntis or IHK. The app stores data as JSON files. One file stores data for each ISO week.
-
-The app runs in a Docker container. It works on amd64 and arm64 computers.
+Each user logs in with their own account and their own WebUntis/IHK
+credentials, encrypted at rest under a per-user key. The app talks to both
+external systems over plain HTTP and JSON-RPC — no browser automation (no
+Playwright, no Selenium). All app data (scraped weeks, IHK history/status,
+user settings) lives in one SQLite database. The app runs in a Docker
+container, on amd64 and arm64 (Raspberry Pi) computers.
 
 ## Project Structure
 
 ```
 berichtsheft/
 ├── app/
-│   ├── main.py              # FastAPI application and scheduler
-│   ├── scraper.py           # Orchestration: scrape_week() ties the rest together
-│   ├── config.py            # Runtime config read from the environment
-│   ├── untis_client.py      # WebUntis JSON-RPC + REST client (UntisClient, ScrapeError)
-│   ├── time_utils.py        # Pure time/week-id helpers
-│   ├── school_calendar.py   # Pure holiday/school-year gap detection
-│   ├── storage.py           # Local file I/O: debug dumps, saved-week checks
-│   ├── ihk_client.py        # IHK tibrosBB portal client (IhkClient, IhkError)
-│   └── ihk_submitter.py     # IHK orchestration: submit_week(), sync_status()
-├── static/                  # HTML, CSS, JavaScript
-├── tests/                   # Test files
-├── data/                    # JSON data (one file per week)
-├── Dockerfile               # Container definition
-├── compose.yaml             # Docker Compose configuration
-├── requirements.txt         # Python package dependencies
-└── pytest.ini              # Test configuration
+│   ├── main.py                # FastAPI app: all routes, scheduler, per-user locks
+│   ├── auth.py                # Password hashing, session cookies, require_user/require_admin
+│   ├── db.py                  # SQLite schema, migrations, all per-user CRUD
+│   ├── crypto.py              # Fernet encryption primitives (master key + per-user DEK)
+│   ├── settings.py            # UserSettings dataclass, built per-request from the DB
+│   ├── config.py              # Runtime config read from the environment
+│   ├── create_admin.py        # CLI: create the first admin account manually
+│   ├── backfill_ihk_history.py # CLI: one-time archive of a user's existing IHK entries
+│   ├── scraper.py             # Orchestration: scrape_week() ties the rest together
+│   ├── untis_client.py        # WebUntis JSON-RPC + REST client (UntisClient, ScrapeError)
+│   ├── time_utils.py          # Pure time/week-id helpers
+│   ├── school_calendar.py     # Pure holiday/school-year gap detection
+│   ├── storage.py             # Per-user encrypted CRUD (wraps db.py) + dev-only debug dumps
+│   ├── ihk_client.py          # IHK tibrosBB portal client (IhkClient, IhkError)
+│   └── ihk_submitter.py       # IHK orchestration: submit_week(), sync_status()
+├── static/                    # HTML/CSS/JS, no build step, no framework
+│   ├── login.html             # Login screen
+│   ├── index.html             # Main week viewer + IHK submit UI
+│   ├── settings.html          # Per-user settings, tabbed (WebUntis/Scraper/IHK/Account/Admin)
+│   ├── bulkops.html           # Bulk scrape a date range + one-time IHK history backfill
+│   └── help.html              # In-app German-language help/FAQ
+├── tests/                     # pytest suite, see "Run Tests" below
+├── data/                      # data/app.db (SQLite) + data/<user_id>/debug/ if DEBUG_DUMPS=true
+├── Dockerfile                 # Container definition
+├── compose.yaml                # Docker Compose configuration
+├── requirements.txt            # Runtime Python dependencies
+├── requirements-dev.txt        # + pytest/httpx for testing
+└── pytest.ini                  # Test configuration
 ```
 
 ## Install and Run
 
 ### First-Time Setup
 
-1. Copy the example configuration:
-
 ```bash
 cp .env.example .env
 ```
 
-2. Edit `.env`. Add your WebUntis username and password:
+Edit `.env` and set the two values a real deployment actually needs:
 
 ```
-UNTIS_USER=your-username
-UNTIS_PASS=your-password
+SECRET_ENCRYPTION_KEY=your-generated-key
+ADMIN_PASSWORD=your-admin-password
 ```
 
-If you also want to submit to IHK, add your IHK tibrosBB login too:
+Generate the key:
 
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
-IHK_USER=your-ihk-username
-IHK_PASS=your-ihk-password
-```
 
-This is optional. Without it, the app still scrapes and shows WebUntis data — the "Bei IHK einreichen" button just does not work.
+`.env.example` also lists `UNTIS_USER`/`UNTIS_PASS`/`IHK_USER`/`IHK_PASS` and
+related vars — these are **legacy/test-only fallbacks**, not read on any real
+request path. Real WebUntis/IHK credentials are entered per-user via the
+Settings UI after login (see "REST API" and "Multi-User Operations" below).
 
-3. Build the Docker image:
+Build and start:
 
 ```bash
 docker compose build
-```
-
-### Start the Application
-
-```bash
 docker compose up -d
 ```
 
-The app starts on `http://localhost:8001`.
-
-Access the app at:
-- `http://localhost:8001/` — web interface
-- `http://localhost:8001/api/weeks` — API endpoint for week list
+The app starts on `http://localhost:8001`. Log in at
+`http://localhost:8001/login.html`.
 
 ### Stop the Application
 
@@ -85,325 +93,341 @@ Access the app at:
 docker compose down
 ```
 
-## How It Works
+## First Admin Account
 
-The scraper gets teaching content from WebUntis in four steps.
+There is **no automatic migration** of old single-tenant data — a fresh
+deployment always starts with an empty database, and a new account always
+starts with empty settings. Two ways to get the first (admin) account:
 
-### Step 1: Login
+1. **Automatic, at startup** (`db.bootstrap_admin_if_needed()`, called from
+   FastAPI's startup event): if the `users` table is empty and
+   `ADMIN_PASSWORD` is set in `.env`, an admin account named `ADMIN_USERNAME`
+   (default `admin`) is created automatically. Requires `SECRET_ENCRYPTION_KEY`
+   to be set to a valid Fernet key — the app fails fast at startup if it
+   isn't (encryption is validated before any admin row is written).
+2. **Manual CLI**, if you didn't set `ADMIN_PASSWORD`:
+   ```bash
+   docker compose run --rm --entrypoint python berichtsheft -m app.create_admin
+   ```
+   Prompts for username/password interactively (or accepts `--username`/
+   `--password` flags). Refuses to run if any user already exists.
 
-The app sends JSON-RPC `authenticate` to WebUntis. The response contains a session cookie and a `personId`.
+Once logged in as admin, create further accounts under **Settings → Admin →
+Benutzer verwalten**, or via `POST /api/admin/users`.
 
-### Step 2: Get Token
+## Encryption Model
 
-The app sends HTTP GET to `/WebUntis/api/token/new`. The response contains a bearer token. This token is needed for REST API calls.
+Two-tier Fernet encryption:
 
-### Step 3: Get Timetable
+- **Master key** (`SECRET_ENCRYPTION_KEY`, from `.env`) directly encrypts two
+  things: (a) each user's random per-user data-encryption key (DEK), stored
+  wrapped in `user_keys.dek_wrapped`; (b) the `untis_pass_enc`/`ihk_pass_enc`
+  columns in `user_settings` — **these two password columns are encrypted
+  with the master key directly, not with the per-user DEK.** Easy to get
+  backwards; the asymmetry is intentional (see `storage.py`'s docstring: the
+  scheduler runs unattended and needs the same master key an operator holds
+  to decrypt WebUntis/IHK login credentials for scraping).
+- **Per-user DEK** encrypts everything else: scraped week data, IHK history,
+  IHK status, and locally-remembered IHK fields — all stored as encrypted
+  BLOBs in SQLite, decrypted only after fetching and unwrapping that user's
+  DEK with the master key.
 
-The app sends JSON-RPC `getTimetable` to get all lessons for the week. The response is a list of lessons. Each lesson has a date, time, subject, and teacher.
+A user cannot exist without a DEK — `db.create_user()` always creates one in
+the same transaction. Decryption failures **raise** (`RuntimeError`) rather
+than silently returning empty data — a wrong or rotated key must surface
+loudly, not look like "no data yet."
 
-### Step 4: Get Teaching Content
+`config.DEBUG_DUMPS=true` (default off) enables `storage._dump_debug()`,
+called from several places in `untis_client.py` when WebUntis returns an
+unexpected shape. This writes **plaintext, unencrypted** JSON to
+`data/<user_id>/debug/` — bypasses all encryption entirely, dev-only, must
+stay off in production.
 
-For each lesson, the app sends HTTP GET to `/WebUntis/api/rest/view/v2/calendar-entry/detail`. This endpoint returns the teaching content for that lesson.
+## Database Schema
 
-### Handle Errors
+Single SQLite file (`DATA_DIR/app.db`), WAL mode, foreign keys on. Schema is
+versioned via an in-code migration list (`app/db.py`), applied automatically
+at startup.
 
-If WebUntis returns an unexpected response, the app saves the raw response to `data/debug/`. This helps you diagnose problems.
+| Table | Columns | Purpose |
+|---|---|---|
+| `users` | `id, username (unique), password_hash, is_admin, created_at` | Accounts |
+| `user_settings` | `user_id (PK), untis_host/school/user, untis_pass_enc, scrape_day, scrape_time, ihk_host/user, ihk_pass_enc, ihk_ausbabschnitt, ihk_ausb_mail, ihk_use_settings_for_abschnitt, start_date, updated_at` | Per-user config; both `*_pass_enc` columns are master-key-encrypted |
+| `sessions` | `session_id (PK), user_id, created_at, expires_at` | Login sessions, 30-day expiry |
+| `schema_migrations` | `version (PK), applied_at` | Migration bookkeeping |
+| `week_data` | `user_id, week_id, payload_enc, updated_at` (PK: user_id+week_id) | Scraped week JSON, DEK-encrypted |
+| `ihk_history` | `user_id (PK), payload_enc, updated_at` | One-time backfilled IHK entry archive, DEK-encrypted |
+| `ihk_status` | `user_id (PK), payload_enc, updated_at` | Last-synced IHK status/lfdnr map, DEK-encrypted |
+| `local_fields` | `user_id (PK), payload_enc, updated_at` | Locally-remembered ausbinhalt1/2 text, DEK-encrypted |
+| `user_keys` | `user_id (PK), dek_wrapped, created_at` | Each user's DEK, master-key-wrapped |
+
+`app/storage.py` is the only module allowed to read/write these encrypted
+tables for real user data (via `app/db.py`'s `*_row` functions) — it never
+touches a filesystem path for real data.
+
+## How Scraping Works
+
+1. JSON-RPC `authenticate` → session cookie + `personId`
+2. `GET /WebUntis/api/token/new` → bearer token for REST calls (non-fatal if
+   this fails — `teaching_content()` just returns `""` for every lesson
+   without a token)
+3. JSON-RPC `getTimetable` → all lessons for the requested week
+4. Per lesson, `GET /WebUntis/api/rest/view/v2/calendar-entry/detail` →
+   `teachingContent`
+
+On an unexpected response shape at any of these steps, if
+`DEBUG_DUMPS=true`, the raw payload is dumped to `data/<user_id>/debug/` for
+diagnosis (see Encryption Model above — off by default, unencrypted when on).
+
+### Lesson merging
+
+`scrape_week()` merges two consecutive lessons when they're on the same day,
+same subject, **and have the same teaching content** — the merged lesson's
+`end` time extends to the later one's. (`scraper.py`'s own module docstring
+describes the merge key as `(date, subject, start)`; the actual code merges
+on `(date, subject, content)`, with no comparison against `start` at all —
+trust the code, the docstring is stale.) Periods with `code: "cancelled"`
+are dropped before any merging happens.
+
+### Four empty-week flags
+
+When a week has no usable (non-cancelled) lessons, `scrape_week()` tries to
+say why, in this order (each returns immediately, so they're mutually
+exclusive in practice):
+
+1. **`unavailable`** — `getTimetable` error `-7004`: the week is beyond
+   WebUntis's publish horizon. Saved unless real lesson data already exists
+   for that week (never overwrites a better answer with a worse guess).
+2. **`holiday`** — confirmed via `getHolidays` (`_is_full_holiday_week`), or
+   via `getSchoolyears` when the week sits in the gap between two school
+   years (`_is_between_school_years`) — both pure functions, no hardcoded
+   dates, derived entirely from WebUntis's own data. The `getHolidays` path
+   is saved unconditionally; the `getSchoolyears` path is saved unless real
+   lesson data already exists.
+3. **`schoolYearBoundary`** — `getTimetable` error `-8507` fired, but
+   neither holiday check above could confirm it either way (both can
+   themselves fail right at the exact boundary, observed live as error
+   `-8998`). A last-resort honest guess. Saved unless real data exists.
+4. **`allCancelled`** — `getTimetable` returned real periods, but every one
+   was `cancelled` (e.g. the first week of a new school year before the real
+   schedule is active), and it's not a confirmed holiday/gap either. Unlike
+   the other three, this still flows through the frontend's normal
+   text/submit path — the Berufsschule box just shows "Alle Stunden
+   abgesagt" and stays submittable. Saved unless real data exists.
+
+If none apply (a genuinely empty response with no explanation available),
+nothing is saved — a later scrape can pick it up once WebUntis has more to
+say. `_has_real_lessons(user_id, week_id)` is the guard used throughout: a
+previous placeholder guess is always safe to overwrite with a
+better-informed one, but real saved lesson data is never overwritten by a
+placeholder.
 
 ## How IHK Submission Works
 
-The IHK tibrosBB portal is an old-style website (JSP/Tomcat), not a REST API. The app talks to it with plain HTTP requests, the same way a web browser would, but without running any JavaScript.
+The IHK tibrosBB portal is an old-style website (JSP/Tomcat), not a REST
+API. The app talks to it with plain HTTP requests, like a browser would, but
+without running any JavaScript.
 
-### Step 1: Login
+1. **Login** — POST username/password, portal replies with a session cookie.
+2. **List existing entries** — the portal's own week-list page tells the app
+   which weeks already have an entry and whether each is locked ("genehmigt"
+   = approved). This must always happen before touching one specific entry —
+   skipping it makes the portal reject the next request even though the
+   session is still valid.
+3. **Find or create the right entry** — if the week already has an
+   unlocked entry, reuse it. If not, the portal can only ever create the
+   **next** sequential week ("Neuer Eintrag" has no "create week X" option —
+   it can't skip ahead). Clicking it doesn't save anything by itself; it
+   only opens a blank draft form (`lfdnr='0'`) that isn't real until saved.
+4. **Save** — fills in the form and submits with the portal's "Speichern"
+   button. Never clicks "Speichern & Senden" (send for approval) — that step
+   is always done by hand on the real site. After saving, the app
+   independently re-fetches the entry and verifies the text actually
+   changed: a save can report HTTP 200 while silently doing nothing (a stale
+   `ausbinhalt13` optimistic-concurrency field causes a silent server-side
+   rejection), so this check always runs rather than trusting the response.
 
-The app sends a POST request with your username and password. The portal replies with a session cookie.
+Key implementation details worth knowing before touching `ihk_client.py`:
 
-### Step 2: List Existing Entries
-
-The app requests the portal's own week list page. This tells the app which weeks already have an entry, and whether each one is locked ("genehmigt" = approved).
-
-This step must always happen before looking at one specific week's entry. Skipping it makes the portal reject the next request, even though you are still logged in.
-
-### Step 3: Find or Create the Right Entry
-
-- If the week already has an entry and it is not locked, the app reuses it.
-- If the week has no entry yet, the app can only create one for the **next** week in order. The portal has no "create week X" option — it always creates whatever week comes next. You cannot skip ahead.
-- Clicking "create new entry" does not save anything by itself. It only opens a blank form. The entry is not real until the next step saves it.
-
-### Step 4: Save
-
-The app fills in the form and submits it with the portal's "Speichern" (save) button. The app never clicks "Speichern & Senden" (save and send for approval) — sending the entry for approval is always something you do yourself, by hand, on the real portal website.
-
-After saving, the app requests the entry again and checks that the text really changed. A save can report success while silently doing nothing, so this check always happens.
+- The portal's submit buttons (`save`, `sent`, `neu`) have no `value=`
+  attribute, so a real browser — and this client — submits them as an empty
+  string, not their label text.
+- `save_entry()` defaults `ausbinhalt1`/`ausbinhalt2` to the entry's current
+  value when the caller passes `None`, never to `""` — hardcoding `""` used
+  to silently wipe manually-entered content on the real site (a real
+  production bug, now regression-tested).
+- For a brand-new draft, the newly-assigned `lfdnr` is discovered by diffing
+  `list_entries()` immediately before and after the **save** POST — not
+  around "Neuer Eintrag" itself, which never changes the list on its own.
 
 ## Configuration
 
-Set these values in `.env` or as environment variables:
+Set these in `.env` or as environment variables.
+
+**Live — actually read on a real request path:**
 
 | Variable | Default | Purpose |
-|----------|---------|---------|
-| `UNTIS_HOST` | `le-bk-muenster.webuntis.com` | WebUntis server name |
-| `UNTIS_SCHOOL` | `le-bk-muenster` | School ID in WebUntis |
-| `UNTIS_USER` | (required) | Your WebUntis username |
-| `UNTIS_PASS` | (required) | Your WebUntis password |
-| `DATA_DIR` | `/data` | Where to save JSON files |
-| `SCRAPE_DAY` | `sun` | Day to auto-scrape (mon-sun, or `off`) |
-| `SCRAPE_TIME` | `18:00` | Time to auto-scrape (HH:MM format) |
-| `SUBJECT_FILTER` | (empty) | Comma-separated subject names to include. If empty, include all subjects. |
-| `IHK_USER` | (required for IHK) | Your IHK tibrosBB username |
-| `IHK_PASS` | (required for IHK) | Your IHK tibrosBB password |
-| `IHK_HOST` | `www.bildung-ihk-nordwestfalen.de` | IHK portal server name |
-| `IHK_AUSBABSCHNITT` | (empty) | Overrides the "Ausbildungsabschnitt" field on a brand-new entry. The portal normally fills this in itself. |
-| `IHK_AUSB_MAIL` | (empty) | Overrides the supervisor email field on a brand-new entry. The portal normally fills this in itself. |
+|---|---|---|
+| `SECRET_ENCRYPTION_KEY` | (required) | Master Fernet key; wraps every per-user DEK and encrypts saved WebUntis/IHK passwords |
+| `ADMIN_USERNAME` | `admin` | Username for the auto-bootstrapped first admin |
+| `ADMIN_PASSWORD` | (empty) | If set, gates automatic admin-account creation at startup |
+| `DATA_DIR` | `/data` | Where `app.db` (and, if enabled, debug dumps) live |
+| `DEBUG_DUMPS` | off | Dev-only: dump raw WebUntis API responses to disk, unencrypted |
 
-### Use Subject Filter
+**Legacy/test-only — module-level defaults, only used as a fallback when a
+function is called with `settings=None` (which no route in `main.py` ever
+does; every request builds and passes real per-user settings). In practice
+only exercised by the test suite and by `UserSettings.from_config()`:**
 
-To include only certain subjects, set `SUBJECT_FILTER`:
+`UNTIS_HOST`, `UNTIS_SCHOOL`, `UNTIS_USER`, `UNTIS_PASS`, `IHK_HOST`,
+`IHK_USER`, `IHK_PASS`, `IHK_AUSBABSCHNITT`, `IHK_AUSB_MAIL`, `SCRAPE_DAY`,
+`SCRAPE_TIME`.
 
-```
-SUBJECT_FILTER=German, English, Math
-```
-
-Only lessons with these subject names will be saved.
+There is no `SUBJECT_FILTER` variable in the current codebase — an earlier
+version had one; it was never carried over and isn't read anywhere in
+`config.py` today.
 
 ## REST API
 
-The app exposes these endpoints:
+All endpoints except `POST /api/auth/login` require a valid `session` cookie
+(httponly, samesite=lax, 30-day expiry, set by login). Admin endpoints
+additionally require `is_admin`. Errors from WebUntis surface as
+`scraper.ScrapeError` → HTTP 502; errors from the IHK portal as
+`ihk_client.IhkError` → HTTP 502; anything else unexpected → 500.
 
-### List Available Weeks
+### Auth
 
-**Request:**
-```
-GET /api/weeks
-```
+**`POST /api/auth/login`** — `{username, password}` → `{ok, username,
+is_admin}`, sets the session cookie. 401 on bad credentials.
 
-**Response:**
+**`POST /api/auth/logout`** — clears the session cookie and deletes the
+session row server-side (`db.delete_session()`), so the session id can't be
+replayed after logout.
+
+**`GET /api/auth/whoami`** → `{username, is_admin}`.
+
+### Admin
+
+**`POST /api/admin/users`** (admin) — `{username, password, is_admin?}` →
+`{ok, id, username}`. 409 if the username is taken.
+
+**`GET /api/admin/users`** (admin) → list of `{id, username, is_admin,
+created_at}`.
+
+### Settings
+
+**`GET /api/me/settings`** → all settings fields; passwords are never
+returned in plaintext, only as `untis_pass_set`/`ihk_pass_set` booleans.
+
+**`PUT /api/me/settings`** — any subset of: `untis_host`, `untis_school`,
+`untis_user`, `untis_pass`, `scrape_day`, `scrape_time`, `ihk_host`,
+`ihk_user`, `ihk_pass`, `ihk_ausbabschnitt`, `ihk_ausb_mail`,
+`ihk_use_settings_for_abschnitt`, `start_date` (validated as `YYYY-MM-DD`).
+Only non-null fields are updated → `{ok:true}`.
+
+**`PUT /api/me/password`** — `{current_password, new_password}` → `{ok:true}`;
+401 if `current_password` is wrong.
+
+**`POST /api/test/untis`** / **`POST /api/test/ihk`** — same body shape as
+`PUT /api/me/settings`; tests a connection using the provided values merged
+over the user's saved settings, without persisting anything → `{ok,
+message}` or 400/502/500.
+
+### Weeks & scraping
+
+**`GET /api/weeks`** → `{weeks: [...], current: "2026-W29", startWeek:
+"2026-W10" | null}` — saved week ids, the current ISO week, and the
+user's configured Berichtsheft start week (from `start_date`), if any.
+
+**`GET /api/weeks/{week_id}`** → the saved week JSON (see shape below); 400
+on a malformed id, 404 if not scraped yet.
+
+**`POST /api/scrape`** — `{week?: "2026-W29"}` (default: current week) →
+the scraped week JSON. Per-user lock (`"scrape"` kind); 409 if a scrape for
+this user is already running. 400 if the week is in the future. After a
+successful scrape, best-effort syncs IHK status too (failure there doesn't
+fail the response).
+
+Week JSON shape:
 ```json
 {
-  "weeks": ["2026-W28", "2026-W29"],
-  "current": "2026-W29"
-}
-```
-
-This returns all weeks that have saved data. It also returns the current ISO week.
-
-### Get Data for One Week
-
-**Request:**
-```
-GET /api/weeks/2026-W29
-```
-
-**Response:**
-```json
-{
-  "week": "2026-W29",
-  "start": "2026-07-20",
-  "end": "2026-07-26",
+  "week": "2026-W29", "start": "2026-07-20", "end": "2026-07-26",
   "scrapedAt": "2026-07-28T17:30:00",
-  "days": [
-    {
-      "date": "2026-07-20",
-      "lessons": [
-        {
-          "date": "2026-07-20",
-          "start": "08:00",
-          "end": "09:30",
-          "subject": "DE",
-          "subjectLong": "German",
-          "teacher": "Mr. Schmidt",
-          "content": "Chapter 5: Grammar rules"
-        }
-      ]
-    }
-  ]
+  "days": [{"date": "2026-07-20", "lessons": [
+    {"date": "2026-07-20", "start": "08:00", "end": "09:30",
+     "subject": "DE", "subjectLong": "German", "teacher": "Mr. Schmidt",
+     "content": "Chapter 5: Grammar rules"}
+  ]}]
 }
 ```
+Plus, when applicable, one of `"holiday": true`, `"unavailable": true`,
+`"schoolYearBoundary": true`, or `"allCancelled": true` (see "Four empty-week
+flags" above), instead of a populated `days` list.
 
-If no data exists for the week, return 404.
+### IHK
 
-### Request a Scrape
+**`GET /api/ihk-status`** → `{status: {week_id: {lfdnr, status, syncedAt}}, fields: {week_id: {ausbinhalt1, ausbinhalt2, savedAt}}}`.
+`status` is one of `in_bearbeitung` (editable), `genehmigt` (approved,
+locked), `warten_auf_genehmigung` (sent, awaiting approval, locked), or
+`abgelehnt` (needs correction, editable). Cached snapshot, refreshed only
+after a scrape or submit, never a live IHK request. Of these four, three
+(`genehmigt`, `in_bearbeitung`, `warten_auf_genehmigung`) have been
+confirmed live against the real portal; `abgelehnt` is still an unconfirmed
+guess at the portal's own status label.
 
-**Request:**
-```
-POST /api/scrape
-Content-Type: application/json
+**`GET /api/ihk-history`** → the one-time-backfilled archive (see
+`backfill_ihk_history.py` below) — `{}` if never run. Not kept in sync
+automatically.
 
-{
-  "week": "2026-W29"
-}
-```
+**`POST /api/submit-ihk`** — `{week, text, ausbinhalt1?, ausbinhalt2?,
+ihk_abschnitt_override?, ihk_ausb_mail_override?}` → `{ok:true}`. 400 on a
+malformed week id or empty text. Per-user lock (`"submit"` kind); 409 if a
+submit for this user is already running. 502 if the week is already
+`genehmigt`, or has no entry and isn't the next sequential week. On success,
+also best-effort saves the two fields locally and re-syncs IHK status
+(neither failure fails the response).
 
-If you do not send a `week` value, the app scrapes the current week.
+### Bulk operations
 
-**Response:**
-```json
-{
-  "week": "2026-W29",
-  "start": "2026-07-20",
-  "end": "2026-07-26",
-  "scrapedAt": "2026-07-28T17:30:00",
-  "days": [...]
-}
-```
+**`POST /api/bulkops/scrape-weeks`** — `{startWeek, endWeek}` (inclusive
+range) → `{weeks_scraped}`. Scrapes each week in the range sequentially,
+using the same per-user `"scrape"` lock per iteration; a failure on one week
+is logged and skipped, doesn't abort the rest.
 
-Only one scrape can run at a time. If a scrape is already running, return 409.
+**`GET /api/bulkops/scrape-progress`** → `{current, total, week}` (all zero/
+null if nothing is running) — polled by the UI while a bulk scrape is in
+flight.
 
-### Get IHK Status
-
-**Request:**
-```
-GET /api/ihk-status
-```
-
-**Response:**
-```json
-{
-  "2026-W29": {
-    "lfdnr": 2774528,
-    "status": "in_bearbeitung",
-    "syncedAt": "2026-08-05T11:38:00"
-  }
-}
-```
-
-`status` is one of `in_bearbeitung` (editable), `genehmigt` (approved, locked), `warten_auf_genehmigung` (sent, awaiting approval, locked), `abgelehnt` (needs correction, editable), or `unknown`. This is a cached snapshot, refreshed after every scrape and every submit — it does not make a live IHK request.
-
-### Submit to IHK
-
-**Request:**
-```
-POST /api/submit-ihk
-Content-Type: application/json
-
-{
-  "week": "2026-W29",
-  "text": "the WebUntis Berufsschule text",
-  "ausbinhalt1": null,
-  "ausbinhalt2": null
-}
-```
-
-`ausbinhalt1` ("Betriebliche Tätigkeiten") and `ausbinhalt2` ("Unterweisungen, betrieblicher Unterricht, sonstige Schulungen") are optional. Leave them `null` to keep whatever is already saved on the real IHK site untouched.
-
-**Response:**
-```json
-{
-  "ok": true
-}
-```
-
-If the week is already `genehmigt` (locked), or the week has no entry yet and is not the very next one in sequence, this returns an error instead of saving. Only one submit can run at a time. If a submit is already running, return 409.
-
-## Data Format
-
-The app saves each week as a JSON file:
-
-```
-data/2026-W29.json
-```
-
-The file has this structure:
-
-```json
-{
-  "week": "2026-W29",
-  "start": "2026-07-20",
-  "end": "2026-07-26",
-  "scrapedAt": "2026-07-28T17:30:00",
-  "days": [
-    {
-      "date": "2026-07-20",
-      "lessons": [
-        {
-          "date": "2026-07-20",
-          "start": "08:00",
-          "end": "09:30",
-          "subject": "DE",
-          "subjectLong": "German",
-          "teacher": "Mr. Schmidt",
-          "content": "Chapter 5: Grammar rules"
-        }
-      ]
-    }
-  ]
-}
-```
-
-### Status Fields
-
-These fields appear in the JSON when there are no lessons:
-
-| Field | Meaning |
-|-------|---------|
-| `"holiday": true` | This week is a school holiday |
-| `"unavailable": true` | The week is too far in the future. WebUntis has not published data for this week yet. |
-| `"schoolYearBoundary": true` | The week spans two school years. The app could not get data. |
-| `"allCancelled": true` | All lessons in the week were cancelled. |
-
-### IHK Status File
-
-The app also keeps a small status file: `data/ihk_status.json`. It records which weeks already have an IHK entry, and whether each one is locked:
-
-```json
-{
-  "2026-W29": {
-    "lfdnr": 2774528,
-    "status": "in_bearbeitung",
-    "syncedAt": "2026-08-05T11:38:00"
-  }
-}
-```
-
-This file only stores status metadata (`lfdnr`, `status`, when it was last checked). It never stores the actual text content of an IHK entry — the app only ever writes text to IHK, never reads it back. This is on purpose: it keeps this app's own data and the real IHK site from ever silently disagreeing about what an entry says.
-
-### Merging Lessons
-
-The app combines two lessons if:
-- They are on the same day
-- They have the same subject
-- They have the same teaching content
-
-When lessons merge, the `end` time updates to match the later lesson.
+**`POST /api/bulkops/backfill-ihk`** — empty body → `{entries_scraped}`.
+Fetches every existing IHK entry (status + full `ausbinhalt1`/`ausbinhalt2`
+text) and overwrites the user's entire `ihk_history` row. Same operation as
+the CLI (`app/backfill_ihk_history.py`), runnable from the UI.
 
 ## Automatic Scheduling
 
-The app has a background scheduler thread. This thread runs every minute to check if it is time to scrape.
+A single background thread (`scheduler()`, started at app startup) loops
+every 60 seconds. Each iteration:
 
-### Schedule Configuration
+1. Queries all users whose `scrape_day != 'off'`.
+2. For each, checks `_scrape_due(now, last_run_date, scrape_day,
+   scrape_hour, scrape_minute)` — a pure function, unit-tested directly
+   rather than only verified by waiting for a real Sunday.
+3. If due, acquires that user's `"scrape"` lock non-blocking (via
+   `_get_lock(user_id, "scrape")` — a per-`(user_id, kind)` dict of
+   `threading.Lock`s, replacing what used to be one global `scrape_lock`/
+   `submit_lock` pair) and scrapes the current **and previous** ISO week
+   (`_scheduled_scrape`) — catches Lehrstoff teachers add late for a week
+   that's already over. Each week is scraped independently; one failing
+   doesn't block the other. Also best-effort syncs IHK status afterward.
 
-Use `SCRAPE_DAY` and `SCRAPE_TIME`:
+**Caveat**: the "already ran today" tracking (`last_run: {user_id: date}`)
+is an in-memory dict, **not persisted**. A container restart right around
+the scheduled time can cause a duplicate scrape that same day. Harmless
+(re-scraping is idempotent) but worth knowing.
 
-```
-SCRAPE_DAY=sun
-SCRAPE_TIME=18:00
-```
-
-This means: scrape every Sunday at 18:00.
-
-The timezone must match the container timezone. Set the timezone in `compose.yaml`:
-
-```yaml
-environment:
-  TZ: Europe/Berlin
-```
-
-### What Gets Scraped
-
-The scheduler scrapes two weeks:
-- The current week
-- The previous week (one week earlier)
-
-Teachers sometimes add teaching content after the week has ended. Re-scraping the previous week catches these changes.
-
-### Disable Scheduling
-
-Set `SCRAPE_DAY=off` to disable automatic scraping:
-
-```
-SCRAPE_DAY=off
-```
-
-When disabled, only manual scrape requests work.
+Timezone comes from the container (`TZ` in `compose.yaml`, default
+`Europe/Berlin`) — must match what users expect their `scrape_day`/
+`scrape_time` to mean.
 
 ## Run Tests
 
@@ -424,6 +448,10 @@ docker run --rm \
   -c "pip install -q pytest==8.3.4 httpx==0.28.1 && cd /srv && pytest -q"
 ```
 
+(The image only installs `requirements.txt`, not `requirements-dev.txt`, so
+pytest isn't present in the built image by default — this command installs
+it ad-hoc into the throwaway test container.)
+
 Or use a simpler method on your computer:
 
 ```bash
@@ -438,17 +466,34 @@ Tests are in the `tests/` directory:
 | File | Tests |
 |------|-------|
 | `conftest.py` | Shared test setup and fixtures |
-| `test_scraper.py` | Scraper functions and error handling (40 tests) |
-| `test_api.py` | REST API endpoints, including IHK routes (32 tests) |
-| `test_ihk_submitter.py` | IHK client and submit logic (15 tests) |
+| `test_scraper.py` | Scraper functions and error handling (39 tests) |
+| `test_api.py` | REST API endpoints, including IHK routes (38 tests) |
+| `test_ihk_submitter.py` | IHK client and submit logic (18 tests) |
 
-87 tests total.
+95 tests total.
+
+### How Tests Authenticate
+
+Tests log in through the real HTTP auth flow, not a test-only bypass.
+`conftest.py` sets `SECRET_ENCRYPTION_KEY`/`DATA_DIR`/`ADMIN_*` env vars to
+isolated test values before `app.main` is imported, then:
+
+- `admin_client` logs in as the bootstrapped admin (`db.bootstrap_admin_if_needed()`,
+  triggered by FastAPI's startup event) via the real `POST /api/auth/login`.
+- `new_user` creates a fresh, uniquely-named non-admin user via the real
+  `POST /api/admin/users` (using `admin_client`), then logs it in the same way.
+  Use this fixture for anything that hits the HTTP API as a normal user.
+- `user_settings` (built on `new_user`) seeds dummy WebUntis/IHK creds via the real
+  `PUT /api/me/settings` and returns a `UserSettings` for tests that call
+  `scraper`/`ihk_submitter`/`storage` functions directly instead of through HTTP.
+- `unauth_client` is a session-less client, for testing 401 behavior.
+
+There are no test-only endpoints and no fixtures that reach into the DB to bypass
+auth or password hashing.
 
 ## Write New Code
 
 ### Code Style
-
-Follow these rules:
 
 - Use type hints for function arguments and returns
 - Keep functions short (under 30 lines when possible)
@@ -459,17 +504,13 @@ Follow these rules:
 
 1. Import the needed modules at the top of `app/main.py`
 2. Define a Pydantic model for the request body (if needed)
-3. Add the endpoint function with the `@app.get()` or `@app.post()` decorator
-4. Return a dict or Pydantic model
-5. Add tests in `tests/test_api.py`
-
-Example:
-
-```python
-@app.get("/api/health")
-def health():
-    return {"status": "ok"}
-```
+3. Add the endpoint function with `Depends(auth.require_user)` (or
+   `require_admin`) unless it's genuinely public
+4. Build a per-request `UserSettings` via `db._row_to_settings(...)` if the
+   endpoint touches scraping/IHK/storage — never call anything with
+   `settings=None` on a real request path
+5. Add tests in `tests/test_api.py`, using the `new_user`/`unauth_client`
+   fixtures from `conftest.py`
 
 ### Add Scraper Logic
 
@@ -489,46 +530,48 @@ def health():
 
 ## Common Problems
 
-### Problem: "UNTIS_USER / UNTIS_PASS not set"
+### Problem: A user's WebUntis/IHK scraping fails with a credentials error
 
-**Cause:** You did not set username and password.
+**Cause:** That user hasn't set WebUntis/IHK username+password.
 
-**Fix:** Edit `.env` and set `UNTIS_USER` and `UNTIS_PASS`.
+**Fix:** Log in as that user, go to **Settings**, fill in and save the
+relevant tab. (Not a `.env` change — credentials are per-user now.)
 
 ### Problem: "WebUntis RPC authenticate failed"
 
-**Cause:** The username or password is wrong.
+**Cause:** The username or password is wrong for that user's WebUntis account.
 
-**Fix:** Check your `.env` file. Make sure the username and password are correct.
+**Fix:** Check and re-save the WebUntis credentials in **Settings**.
 
 ### Problem: "no data for this week"
 
-**Cause:** You have not scraped this week yet.
+**Cause:** That week hasn't been scraped yet for this user.
 
-**Fix:** Use the web UI to click "Jetzt scrapen" (Scrape Now). Or send a POST request to `/api/scrape`.
+**Fix:** Click "Jetzt abrufen" in the UI, or `POST /api/scrape`.
 
-### Problem: Debug files in `data/debug/`
+### Problem: Debug files in `data/<user_id>/debug/`
 
-**Cause:** WebUntis returned an unexpected response.
+**Cause:** WebUntis returned an unexpected response, and `DEBUG_DUMPS=true`
+is set.
 
-**Fix:** Look at the JSON file in `data/debug/`. It shows the raw response. Find out why the response is wrong. Common causes:
-- WebUntis API changed
-- Server error on the WebUntis side
-- Network problem
+**Fix:** Look at the JSON file — it shows the raw response. Common causes:
+WebUntis API changed, a WebUntis-side server error, or a network problem.
+Check the WebUntis status page if the server seems down.
 
-Check the WebUntis status page. If the server is down, wait and try again later.
+### Problem: Scheduler does not run scrape for a user
 
-### Problem: Scheduler does not run scrape
+**Cause:** That user's `scrape_day` (Settings → Scraper) is `off`, or the
+container restarted right around the scheduled time (see the `last_run`
+caveat under "Automatic Scheduling").
 
-**Cause:** `SCRAPE_DAY` is wrong or set to `off`.
-
-**Fix:** Check your `.env`. Set `SCRAPE_DAY` to `sun` (or another day). Make sure `SCRAPE_TIME` is correct.
+**Fix:** Check and set `scrape_day`/`scrape_time` in Settings.
 
 ### Problem: "IHK_USER / IHK_PASS not set"
 
-**Cause:** You did not set IHK login credentials.
+**Cause:** That user hasn't set IHK tibrosBB credentials.
 
-**Fix:** Edit `.env` and set `IHK_USER` and `IHK_PASS`. The "Bei IHK einreichen" button will not work without them.
+**Fix:** Settings → IHK tab. Without them, "Bei IHK einreichen" won't work
+for that user.
 
 ### Problem: "is already genehmigt (locked) - cannot submit"
 
@@ -585,7 +628,10 @@ Configuration changes take effect immediately.
 
 ### Edit Static Files
 
-Static files are HTML, CSS, and JavaScript in the `static/` directory.
+Static files are HTML, CSS, and JavaScript in the `static/` directory. Each
+page (`login.html`, `index.html`, `settings.html`, `bulkops.html`) is
+self-contained — there is no shared `api.js` or common fetch wrapper; each
+duplicates its own `fetch()` calls.
 
 1. Edit the file
 2. Refresh the web page in your browser
@@ -605,11 +651,11 @@ The `-f` flag shows new logs as they happen.
 
 ### Check Debug Dumps
 
-If the scraper failed, look in `data/debug/`:
+If the scraper failed and `DEBUG_DUMPS=true` is set, look in `data/<user_id>/debug/`:
 
 ```bash
-ls -la data/debug/
-cat data/debug/20260728-173000-rpc-getTimetable.json
+ls -la data/<user_id>/debug/
+cat data/<user_id>/debug/20260728-173000-rpc-getTimetable.json
 ```
 
 Debug files show the raw API response. They help you understand what went wrong.
@@ -653,10 +699,13 @@ The app runs in Docker. Follow these steps:
 
 4. Wait for the app to start (about 5 seconds)
 
-5. Test the API:
+5. Test the API (will 401 without a session cookie — that's expected):
    ```bash
-   curl http://localhost:8001/api/weeks
+   curl -i http://localhost:8001/api/weeks
    ```
+
+`compose.yaml` binds the container's port 8000 to `0.0.0.0:8001` on the
+host — reachable from other machines on the network, not just localhost.
 
 ## Performance
 
@@ -665,92 +714,76 @@ The app is designed to be lightweight:
 - Scraping one week takes about 5-10 seconds
 - API responses are very fast (under 100ms)
 - The app uses minimal CPU and memory
-- Data is stored as plain JSON files (no database needed)
+- Data is stored in a single SQLite file — no separate database service needed
 
 ## Security Notes
 
-- The WebUntis password is stored in `.env`. Protect this file.
-- The app does not use authentication. Run it only on a private network or behind a VPN.
-- Do not share `.env` files in version control systems
+- Sessions: opaque random tokens (`secrets.token_urlsafe(32)`), stored
+  server-side in the `sessions` table, set as an httponly, samesite=lax
+  cookie, 30-day expiry.
+- Passwords: PBKDF2-HMAC-SHA256, 260,000 iterations, random 32-byte salt per
+  password.
+- Per-user data (scraped weeks, IHK history/status/fields, WebUntis/IHK
+  passwords) is encrypted at rest — see "Encryption Model" above.
+- `auth.verify_password` uses `hmac.compare_digest` for the hash comparison
+  (constant-time, avoids a timing side-channel). `POST /api/auth/logout`
+  invalidates the session server-side, not just the client-side cookie.
+- Protect `.env` — it holds `SECRET_ENCRYPTION_KEY` and `ADMIN_PASSWORD`.
+  Never commit it; it's already gitignored.
+- `DEBUG_DUMPS=true` writes plaintext, unencrypted API responses to disk —
+  never enable it in production.
 
-## Multi-User Setup
-
-This app is now multi-user with login/registration and per-user WebUntis/IHK credentials.
-
-### First Migration (Single-Tenant → Multi-User)
-
-On first `docker compose up -d` after updating to multi-user:
-
-1. Generate a `SECRET_ENCRYPTION_KEY` for credential encryption:
-   ```bash
-   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-   ```
-   Copy the output into `.env` as `SECRET_ENCRYPTION_KEY=...`
-
-2. If you have a legacy single-tenant `.env` with `UNTIS_USER`/`UNTIS_PASS`:
-   - Set `ADMIN_PASSWORD=somepassword` in `.env`
-   - On first startup, the migration will auto-create an admin account and move your existing data files to that user's folder
-   - The app will print a summary to the logs (`docker compose logs`)
-
-3. If starting fresh (no legacy `.env`):
-   - Set `ADMIN_PASSWORD=somepassword` in `.env` (or leave it unset and run `python -m app.create_admin` after startup)
-   - On first startup, the admin account is created and you can log in at `/login.html`
-
-### Post-Migration Cleanup
-
-Once the migration has completed successfully:
-
-1. **Blank the `.env` legacy credentials** — they're no longer read for any real request path, only for the test/fallback code path:
-   ```bash
-   # In .env, comment these out or delete them:
-   #UNTIS_USER=
-   #UNTIS_PASS=
-   #IHK_USER=
-   #IHK_PASS=
-   ```
-   This prevents accidental credential leaks if the `.env` file is ever exposed.
-
-2. Verify the migration worked:
-   - Log in at `http://localhost:8001/login.html` with the admin username/password
-   - Check `data/app.db` exists (the SQLite database)
-   - Check `data/{user_id}/` folders exist with your migrated week files
-   - Existing scraped weeks should be visible after login
+## Multi-User Operations
 
 ### Creating Additional User Accounts
 
 Once logged in as admin:
 
-1. Go to **Settings** (top nav) → **Benutzer verwalten** (Manage Users)
+1. Go to **Settings** (top nav) → **Admin** tab → **Benutzer verwalten**
 2. Fill in username, password, optionally mark as admin
 3. Click "Erstellen" (Create)
 
-Or via CLI (if needed):
+This tab is only visible to admins (`GET /api/auth/whoami`'s `is_admin`
+gates it client-side; the endpoints themselves are also admin-only
+server-side). There's no edit or delete UI for users currently — only create
+and list.
+
+Or via CLI:
 ```bash
-python -m app.create_admin
+docker compose run --rm --entrypoint python berichtsheft -m app.create_admin
 ```
 
 ### Setting WebUntis/IHK Credentials Per-User
 
 Each user logs in with their own app login, then:
 
-1. Go to **Settings** (top nav)
-2. Fill in their WebUntis host, school, username, password
-3. Optionally set IHK tibrosBB credentials if they want to use the submit feature
-4. Click "Speichern" (Save)
+1. Go to **Settings**
+2. **WebUntis tab**: host, username, password (password field left blank on
+   reload to keep the existing saved value — only overwritten if you type a
+   new one)
+3. **IHK tab**: host, username, password (same blank-keeps-existing
+   behavior), optionally `ihk_ausbabschnitt`/`ihk_ausb_mail` overrides for a
+   brand-new entry, and a checkbox to always use these values instead of
+   being asked per submission
+4. **Scraper tab**: `scrape_day`/`scrape_time`, and `start_date` (weeks
+   before this date won't be shown or scrapable)
+5. Click "Speichern" (Save) on each tab independently
 
-Each user's credentials are encrypted at rest with `SECRET_ENCRYPTION_KEY`. The scheduler scrapes for each user independently based on their own `SCRAPE_DAY`/`SCRAPE_TIME` settings.
+Each user's credentials are encrypted at rest with `SECRET_ENCRYPTION_KEY`
+(see Encryption Model). The scheduler scrapes for each user independently
+based on their own `scrape_day`/`scrape_time` settings.
 
 ## Contact and Support
 
 For questions or problems:
 
-1. Check the `data/debug/` directory for error details
+1. Check `data/<user_id>/debug/` for error details (if `DEBUG_DUMPS=true`)
 2. Review the logs with `docker compose logs`
-3. Test the WebUntis API connection
-4. Verify that `.env` has correct credentials
+3. Test the WebUntis/IHK connection from **Settings** (the "Test Connection" buttons)
+4. Verify `.env` has `SECRET_ENCRYPTION_KEY` set and valid
 
 ## Related Documentation
 
 - `README.md` — Quick start guide
-- `AGENTS.md` — How to use Claude agents to work on this project
+- `AGENTS.md` — Dense reference for AI agents working on this codebase
 - WebUntis API — Official documentation from your school

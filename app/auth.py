@@ -1,6 +1,7 @@
 """Authentication: password hashing, session management, FastAPI dependencies."""
 
 import hashlib
+import hmac
 import secrets
 import logging
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ def verify_password(password: str, password_hash: str) -> bool:
         stored_hash = parts[3]
 
         hash_obj = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
-        return hash_obj.hex() == stored_hash
+        return hmac.compare_digest(hash_obj.hex(), stored_hash)
     except Exception as e:
         log.warning("Password verification error: %s", e)
         return False

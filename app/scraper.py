@@ -56,7 +56,7 @@ def scrape_week(week_id: str, settings: UserSettings | None = None) -> dict:
             else:
                 raise
 
-        # group double lessons: one entry per (date, subject, start) after sort
+        # group double lessons: one entry per (date, subject, content) after sort
         lessons = []
         for p in periods:
             if p.get("code") == "cancelled":

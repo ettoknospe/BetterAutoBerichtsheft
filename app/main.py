@@ -5,7 +5,7 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Depends, Response
+from fastapi import FastAPI, HTTPException, Depends, Request, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -117,11 +117,11 @@ async def login(req: LoginRequest, response: Response):
     return {"ok": True, "username": user["username"], "is_admin": bool(user["is_admin"])}
 
 @app.post("/api/auth/logout")
-async def logout(user: auth.AuthedUser = Depends(auth.require_user), response: Response = None):
-    """Clear session."""
-    session_id = None  # Will be extracted from cookies by require_user
-    # Cannot easily extract session_id here; would need it from cookies
-    # For now, just invalidate via cookie expiry
+async def logout(request: Request, user: auth.AuthedUser = Depends(auth.require_user), response: Response = None):
+    """Clear session, both client-side (cookie) and server-side (DB row)."""
+    session_id = request.cookies.get("session")
+    if session_id:
+        db.delete_session(session_id)
     response.delete_cookie("session")
     return {"ok": True}
 
@@ -348,8 +348,8 @@ def scrape(req: ScrapeRequest, user: auth.AuthedUser = Depends(auth.require_user
         # Best effort: sync IHK status if credentials are configured
         try:
             ihk_submitter.sync_status(settings=settings)
-        except ihk_client.IhkError as e:
-            log.warning("IHK status sync failed (credentials not set or invalid): %s", e)
+        except Exception as e:
+            log.warning("IHK status sync failed (non-fatal): %s", e)
         return result
     except scraper.ScrapeError as e:
         raise HTTPException(status_code=502, detail=str(e))
@@ -403,8 +403,16 @@ def submit_ihk(req: SubmitIhkRequest, user: auth.AuthedUser = Depends(auth.requi
 
         # MANDATORY: settings= passed explicitly
         ihk_submitter.submit_week(req.week, req.text, req.ausbinhalt1, req.ausbinhalt2, settings=settings)
-        ihk_submitter.save_local_fields(req.week, req.ausbinhalt1, req.ausbinhalt2, settings=settings)
-        ihk_submitter.sync_status(settings=settings)
+        # Best effort: remembering the submitted text locally and refreshing
+        # status must not turn an otherwise-successful submit into an error.
+        try:
+            ihk_submitter.save_local_fields(req.week, req.ausbinhalt1, req.ausbinhalt2, settings=settings)
+        except Exception as e:
+            log.warning("saving local IHK fields failed (non-fatal): %s", e)
+        try:
+            ihk_submitter.sync_status(settings=settings)
+        except Exception as e:
+            log.warning("IHK status sync failed (non-fatal): %s", e)
         return {"ok": True}
     except IhkError as e:
         raise HTTPException(status_code=502, detail=str(e))
