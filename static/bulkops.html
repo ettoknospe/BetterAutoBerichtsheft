@@ -262,7 +262,7 @@ $("scrapeBtn").onclick = async () => {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Request failed");
+    if (!res.ok) throw new Error(data.detail || "Anfrage fehlgeschlagen");
 
     setStatus(status, `Fertig: ${data.weeks_scraped} Wochen abgerufen`, "ok");
   } catch (e) {
@@ -288,7 +288,7 @@ $("backfillBtn").onclick = async () => {
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.detail || "Request failed");
+    if (!res.ok) throw new Error(data.detail || "Anfrage fehlgeschlagen");
 
     setStatus(status, `Fertig: ${data.entries_scraped} Einträge abgerufen`, "ok");
   } catch (e) {

@@ -326,8 +326,8 @@
 
   #ihkBadge { font-size: .8rem; margin-left: .5rem; }
   #ihkBadge.genehmigt { color: var(--ok); }
-  #ihkBadge.eingetragen { color: var(--text-muted); }
-  #ihkBadge.warten { color: var(--warn); }
+  #ihkBadge.in-bearbeitung { color: var(--text-muted); }
+  #ihkBadge.warten-auf-genehmigung { color: var(--warn); }
   #ihkBadge.abgelehnt { color: var(--err); }
 
   #ihkBtn:disabled { opacity: .5; cursor: not-allowed; }
@@ -381,11 +381,11 @@
 
   <nav class="sidebar-nav">
     <a href="/help.html" title="Hilfe" class="nav-link">
-      <img src="/help.svg" alt="Help" class="nav-icon nav-icon-img">
+      <img src="/help.svg" alt="Hilfe" class="nav-icon nav-icon-img">
       <span class="nav-text">Hilfe</span>
     </a>
     <a href="/bulkops.html" title="Datenimport" class="nav-link">
-      <img src="/sync.svg" alt="Sync" class="nav-icon nav-icon-img">
+      <img src="/sync.svg" alt="Import" class="nav-icon nav-icon-img">
       <span class="nav-text">Datenimport</span>
     </a>
     <a href="/settings.html" title="Einstellungen öffnen" class="nav-link">
@@ -790,7 +790,7 @@ $("ihkBtn").onclick = async () => {
   const field1 = $("ihkField1");
   const field2 = $("ihkField2");
   if (!field1 || !field2) {
-    setStatus("Fehler: Form nicht verfügbar (Week gelöst)", "err");
+    setStatus("Fehler: Formular nicht verfügbar (Woche gewechselt)", "err");
     return;
   }
 

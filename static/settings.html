@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BetterAutoBerichtsheft - Settings</title>
+    <title>BetterAutoBerichtsheft - Einstellungen</title>
     <style>
         * {
             margin: 0;
@@ -283,8 +283,8 @@
         <nav>
             <h1>Berichtsheft</h1>
             <div class="nav-buttons">
-                <a href="/">Back to Weeks</a>
-                <button class="logout" onclick="logout()">Logout</button>
+                <a href="/">Zurück zu den Wochen</a>
+                <button class="logout" onclick="logout()">Abmelden</button>
             </div>
         </nav>
     </header>
@@ -292,9 +292,9 @@
     <div class="container">
         <div class="tabs">
             <button class="tab-button active" onclick="switchTab('untis')">WebUntis</button>
-            <button class="tab-button" onclick="switchTab('scraper')">Scraper</button>
+            <button class="tab-button" onclick="switchTab('scraper')">Abruf</button>
             <button class="tab-button" onclick="switchTab('ihk')">IHK</button>
-            <button class="tab-button" onclick="switchTab('account')">Account</button>
+            <button class="tab-button" onclick="switchTab('account')">Konto</button>
             <button class="tab-button admin-tab" onclick="switchTab('admin')">Admin</button>
         </div>
 
@@ -303,28 +303,28 @@
             <div class="message" id="untis-msg"></div>
             <form id="untisForm" onsubmit="saveUntis(event)">
                 <fieldset>
-                    <legend>WebUntis Configuration</legend>
+                    <legend>WebUntis-Konfiguration</legend>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="untis_host">Host</label>
-                            <input type="text" id="untis_host" placeholder="e.g., example.webuntis.com">
+                            <input type="text" id="untis_host" placeholder="z.B. example.webuntis.com">
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="untis_user">Username</label>
-                            <input type="text" id="untis_user" placeholder="WebUntis username">
+                            <label for="untis_user">Benutzername</label>
+                            <input type="text" id="untis_user" placeholder="WebUntis-Benutzername">
                         </div>
                         <div class="form-group">
-                            <label for="untis_pass">Password</label>
-                            <input type="password" id="untis_pass" placeholder="WebUntis password">
-                            <div class="password-note">Leave blank to keep existing password</div>
+                            <label for="untis_pass">Passwort</label>
+                            <input type="password" id="untis_pass" placeholder="WebUntis-Passwort">
+                            <div class="password-note">Leer lassen, um das vorhandene Passwort zu behalten</div>
                         </div>
                     </div>
                 </fieldset>
                 <div class="button-group">
-                    <button type="submit"><span class="spinner"></span>Save WebUntis</button>
-                    <button type="button" onclick="testUntis(event)">Test Connection</button>
+                    <button type="submit"><span class="spinner"></span>WebUntis speichern</button>
+                    <button type="button" onclick="testUntis(event)">Verbindung testen</button>
                 </div>
             </form>
         </div>
@@ -334,23 +334,23 @@
             <div class="message" id="scraper-msg"></div>
             <form id="scraperForm" onsubmit="saveScraper(event)">
                 <fieldset>
-                    <legend>Scraper Schedule</legend>
+                    <legend>Abrufplan</legend>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="scrape_day">Day of Week</label>
+                            <label for="scrape_day">Wochentag</label>
                             <select id="scrape_day">
-                                <option value="off">Off (manual only)</option>
-                                <option value="mon">Monday</option>
-                                <option value="tue">Tuesday</option>
-                                <option value="wed">Wednesday</option>
-                                <option value="thu">Thursday</option>
-                                <option value="fri">Friday</option>
-                                <option value="sat">Saturday</option>
-                                <option value="sun">Sunday</option>
+                                <option value="off">Aus (nur manuell)</option>
+                                <option value="mon">Montag</option>
+                                <option value="tue">Dienstag</option>
+                                <option value="wed">Mittwoch</option>
+                                <option value="thu">Donnerstag</option>
+                                <option value="fri">Freitag</option>
+                                <option value="sat">Samstag</option>
+                                <option value="sun">Sonntag</option>
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="scrape_time">Time (24-hour)</label>
+                            <label for="scrape_time">Uhrzeit (24-Stunden)</label>
                             <input type="time" id="scrape_time" value="18:00">
                         </div>
                     </div>
@@ -365,7 +365,7 @@
                         </div>
                     </div>
                 </fieldset>
-                <button type="submit"><span class="spinner"></span>Save Schedule</button>
+                <button type="submit"><span class="spinner"></span>Zeitplan speichern</button>
             </form>
         </div>
 
@@ -374,45 +374,45 @@
             <div class="message" id="ihk-msg"></div>
             <form id="ihkForm" onsubmit="saveIhk(event)">
                 <fieldset>
-                    <legend>IHK Portal Configuration</legend>
+                    <legend>IHK-Portal-Konfiguration</legend>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="ihk_host">Host</label>
-                            <input type="text" id="ihk_host" placeholder="e.g., www.bildung-ihk-nordwestfalen.de (no https://)">
+                            <input type="text" id="ihk_host" placeholder="z.B. www.bildung-ihk-nordwestfalen.de (kein https://)">
                         </div>
                         <div class="form-group">
-                            <label for="ihk_user">Username</label>
-                            <input type="text" id="ihk_user" placeholder="IHK username">
+                            <label for="ihk_user">Benutzername</label>
+                            <input type="text" id="ihk_user" placeholder="IHK-Benutzername">
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label for="ihk_pass">Password</label>
-                            <input type="password" id="ihk_pass" placeholder="IHK password">
-                            <div class="password-note">Leave blank to keep existing password</div>
+                            <label for="ihk_pass">Passwort</label>
+                            <input type="password" id="ihk_pass" placeholder="IHK-Passwort">
+                            <div class="password-note">Leer lassen, um das vorhandene Passwort zu behalten</div>
                         </div>
                     </div>
                     <div class="form-row">
                         <div class="form-group">
                             <label for="ihk_ausbabschnitt">Ausbildungsabschnitt</label>
-                            <input type="text" id="ihk_ausbabschnitt" placeholder="e.g., 1">
+                            <input type="text" id="ihk_ausbabschnitt" placeholder="z.B. 1">
                         </div>
                         <div class="form-group">
-                            <label for="ihk_ausb_mail">Ausbilder Mail</label>
-                            <input type="email" id="ihk_ausb_mail" placeholder="trainer@example.com">
+                            <label for="ihk_ausb_mail">Ausbilder E-Mail</label>
+                            <input type="email" id="ihk_ausb_mail" placeholder="ausbilder@example.com">
                         </div>
                         <div class="form-group">
                             <label for="ihk_use_settings">
                                 <input type="checkbox" id="ihk_use_settings" checked>
-                                Always use these values (don't ask per week)
+                                Diese Werte immer verwenden (nicht pro Woche abfragen)
                             </label>
-                            <small>Uncheck to enter Ausbildungsabschnitt and Ausbilder Mail for each week submission</small>
+                            <small>Deaktivieren, um Ausbildungsabschnitt und Ausbilder E-Mail für jede Wocheneinreichung einzeln anzugeben</small>
                         </div>
                     </div>
                 </fieldset>
                 <div class="button-group">
-                    <button type="submit"><span class="spinner"></span>Save IHK</button>
-                    <button type="button" onclick="testIhk(event)">Test Connection</button>
+                    <button type="submit"><span class="spinner"></span>IHK speichern</button>
+                    <button type="button" onclick="testIhk(event)">Verbindung testen</button>
                 </div>
             </form>
         </div>
@@ -422,17 +422,17 @@
             <div class="message" id="account-msg"></div>
             <form id="passwordForm" onsubmit="changePassword(event)">
                 <fieldset>
-                    <legend>Change Password</legend>
+                    <legend>Passwort ändern</legend>
                     <div class="form-group">
-                        <label for="current_password">Current Password</label>
+                        <label for="current_password">Aktuelles Passwort</label>
                         <input type="password" id="current_password" required>
                     </div>
                     <div class="form-group">
-                        <label for="new_password">New Password</label>
+                        <label for="new_password">Neues Passwort</label>
                         <input type="password" id="new_password" required>
                     </div>
                 </fieldset>
-                <button type="submit"><span class="spinner"></span>Change Password</button>
+                <button type="submit"><span class="spinner"></span>Passwort ändern</button>
             </form>
         </div>
 
@@ -440,35 +440,35 @@
         <div id="admin" class="tab-content">
             <div class="message" id="admin-msg"></div>
             <fieldset>
-                <legend>Create New User</legend>
+                <legend>Neuen Benutzer erstellen</legend>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="new_user_name">Username</label>
+                        <label for="new_user_name">Benutzername</label>
                         <input type="text" id="new_user_name" required>
                     </div>
                     <div class="form-group">
-                        <label for="new_user_pass">Password</label>
+                        <label for="new_user_pass">Passwort</label>
                         <input type="password" id="new_user_pass" required>
                     </div>
                 </div>
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="new_user_admin">
-                        Make Admin
+                        Als Admin festlegen
                     </label>
                 </div>
-                <button type="button" onclick="createUser()"><span class="spinner"></span>Create User</button>
+                <button type="button" onclick="createUser()"><span class="spinner"></span>Benutzer erstellen</button>
             </fieldset>
 
             <fieldset>
-                <legend>Users</legend>
+                <legend>Benutzer</legend>
                 <table class="users-table" id="usersTable">
                     <thead>
                         <tr>
                             <th>ID</th>
-                            <th>Username</th>
-                            <th>Role</th>
-                            <th>Created</th>
+                            <th>Benutzername</th>
+                            <th>Rolle</th>
+                            <th>Erstellt</th>
                         </tr>
                     </thead>
                     <tbody id="usersTableBody">
@@ -535,7 +535,7 @@
                     <tr>
                         <td>${u.id}</td>
                         <td>${u.username}</td>
-                        <td>${u.is_admin ? 'Admin' : 'User'}</td>
+                        <td>${u.is_admin ? 'Admin' : 'Benutzer'}</td>
                         <td>${new Date(u.created_at).toLocaleDateString()}</td>
                     </tr>
                 `).join('');
@@ -596,17 +596,17 @@
 
                 const msgEl = document.getElementById(`${tab}-msg`);
                 if (res.ok) {
-                    msgEl.textContent = 'Settings saved!';
+                    msgEl.textContent = 'Einstellungen gespeichert!';
                     msgEl.className = 'message success';
                     if (tab === 'untis') document.getElementById('untis_pass').value = '';
                     if (tab === 'ihk') document.getElementById('ihk_pass').value = '';
                 } else {
                     const error = await res.json();
-                    msgEl.textContent = 'Error: ' + (error.detail || 'Unknown error');
+                    msgEl.textContent = 'Fehler: ' + (error.detail || 'Unbekannter Fehler');
                     msgEl.className = 'message error';
                 }
             } catch (err) {
-                document.getElementById(`${tab}-msg`).textContent = 'Network error: ' + err.message;
+                document.getElementById(`${tab}-msg`).textContent = 'Netzwerkfehler: ' + err.message;
                 document.getElementById(`${tab}-msg`).className = 'message error';
             } finally {
                 btn.classList.remove('loading');
@@ -632,16 +632,16 @@
 
                 const msgEl = document.getElementById('account-msg');
                 if (res.ok) {
-                    msgEl.textContent = 'Password changed!';
+                    msgEl.textContent = 'Passwort geändert!';
                     msgEl.className = 'message success';
                     document.getElementById('passwordForm').reset();
                 } else {
                     const error = await res.json();
-                    msgEl.textContent = 'Error: ' + (error.detail || 'Unknown error');
+                    msgEl.textContent = 'Fehler: ' + (error.detail || 'Unbekannter Fehler');
                     msgEl.className = 'message error';
                 }
             } catch (err) {
-                document.getElementById('account-msg').textContent = 'Network error: ' + err.message;
+                document.getElementById('account-msg').textContent = 'Netzwerkfehler: ' + err.message;
                 document.getElementById('account-msg').className = 'message error';
             } finally {
                 btn.classList.remove('loading');
@@ -667,7 +667,7 @@
 
                 const msgEl = document.getElementById('admin-msg');
                 if (res.ok) {
-                    msgEl.textContent = 'User created!';
+                    msgEl.textContent = 'Benutzer erstellt!';
                     msgEl.className = 'message success';
                     document.getElementById('new_user_name').value = '';
                     document.getElementById('new_user_pass').value = '';
@@ -675,11 +675,11 @@
                     await loadUsers();
                 } else {
                     const error = await res.json();
-                    msgEl.textContent = 'Error: ' + (error.detail || 'Unknown error');
+                    msgEl.textContent = 'Fehler: ' + (error.detail || 'Unbekannter Fehler');
                     msgEl.className = 'message error';
                 }
             } catch (err) {
-                document.getElementById('admin-msg').textContent = 'Network error: ' + err.message;
+                document.getElementById('admin-msg').textContent = 'Netzwerkfehler: ' + err.message;
                 document.getElementById('admin-msg').className = 'message error';
             } finally {
                 btn.classList.remove('loading');
@@ -706,15 +706,15 @@
 
                 const msgEl = document.getElementById('untis-msg');
                 if (res.ok) {
-                    msgEl.textContent = '✓ WebUntis connection successful!';
+                    msgEl.textContent = '✓ WebUntis-Verbindung erfolgreich!';
                     msgEl.className = 'message success';
                 } else {
                     const error = await res.json();
-                    msgEl.textContent = '✗ Connection failed: ' + (error.detail || 'Unknown error');
+                    msgEl.textContent = '✗ Verbindung fehlgeschlagen: ' + (error.detail || 'Unbekannter Fehler');
                     msgEl.className = 'message error';
                 }
             } catch (err) {
-                document.getElementById('untis-msg').textContent = '✗ Network error: ' + err.message;
+                document.getElementById('untis-msg').textContent = '✗ Netzwerkfehler: ' + err.message;
                 document.getElementById('untis-msg').className = 'message error';
             } finally {
                 btn.classList.remove('loading');
@@ -741,15 +741,15 @@
 
                 const msgEl = document.getElementById('ihk-msg');
                 if (res.ok) {
-                    msgEl.textContent = '✓ IHK connection successful!';
+                    msgEl.textContent = '✓ IHK-Verbindung erfolgreich!';
                     msgEl.className = 'message success';
                 } else {
                     const error = await res.json();
-                    msgEl.textContent = '✗ Connection failed: ' + (error.detail || 'Unknown error');
+                    msgEl.textContent = '✗ Verbindung fehlgeschlagen: ' + (error.detail || 'Unbekannter Fehler');
                     msgEl.className = 'message error';
                 }
             } catch (err) {
-                document.getElementById('ihk-msg').textContent = '✗ Network error: ' + err.message;
+                document.getElementById('ihk-msg').textContent = '✗ Netzwerkfehler: ' + err.message;
                 document.getElementById('ihk-msg').className = 'message error';
             } finally {
                 btn.classList.remove('loading');

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BetterAutoBerichtsheft - Login</title>
+    <title>BetterAutoBerichtsheft - Anmeldung</title>
     <style>
         * {
             margin: 0;
@@ -196,22 +196,22 @@
         <div class="header">
             <div class="logo"><img src="/logo.svg" alt="BetterAutoBerichtsheft"></div>
             <h1>BetterAutoBerichtsheft</h1>
-            <p>Your automated Berichtsheft companion</p>
+            <p>Dein automatischer Berichtsheft-Begleiter</p>
         </div>
 
         <div class="form-container">
             <form id="loginForm">
                 <div class="form-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" name="username" placeholder="Enter your username" required autofocus>
+                    <label for="username">Benutzername</label>
+                    <input type="text" id="username" name="username" placeholder="Benutzername eingeben" required autofocus>
                 </div>
                 <div class="form-group">
-                    <label for="password">Password</label>
-                    <input type="password" id="password" name="password" placeholder="Enter your password" required>
+                    <label for="password">Passwort</label>
+                    <input type="password" id="password" name="password" placeholder="Passwort eingeben" required>
                 </div>
                 <button type="submit" id="loginBtn">
                     <span class="spinner"></span>
-                    <span>Sign In</span>
+                    <span>Anmelden</span>
                 </button>
                 <div class="error" id="errorMsg"></div>
             </form>
@@ -243,11 +243,11 @@
                     window.location.href = '/';
                 } else {
                     const data = await res.json();
-                    errorDiv.textContent = data.detail || 'Login failed';
+                    errorDiv.textContent = data.detail || 'Anmeldung fehlgeschlagen';
                     errorDiv.classList.add('show');
                 }
             } catch (err) {
-                errorDiv.textContent = 'Network error: ' + err.message;
+                errorDiv.textContent = 'Netzwerkfehler: ' + err.message;
                 errorDiv.classList.add('show');
             } finally {
                 loginBtn.classList.remove('loading');
