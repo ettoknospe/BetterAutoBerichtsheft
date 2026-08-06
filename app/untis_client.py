@@ -54,7 +54,7 @@ class UntisClient:
         r.raise_for_status()
         data = r.json()
         if "error" in data:
-            _dump_debug(f"rpc-{method}", data, data_dir=self.cfg.DATA_DIR)
+            _dump_debug(f"rpc-{method}", data, user_id=self.cfg.user_id)
             err = data["error"]
             code = err.get("code") if isinstance(err, dict) else None
             raise ScrapeError(f"WebUntis RPC {method} failed: {err}", code=code)
@@ -66,7 +66,7 @@ class UntisClient:
         )
         self.person_id = result.get("personId")
         if not self.person_id:
-            _dump_debug("authenticate", result)
+            _dump_debug("authenticate", result, user_id=self.cfg.user_id)
             raise ScrapeError("login ok but no personId in response")
         # bearer token used by the REST endpoints of the new frontend
         r = self.s.get(f"{self.base}/WebUntis/api/token/new", timeout=30)
@@ -99,21 +99,21 @@ class UntisClient:
             },
         )
         if not isinstance(result, list):
-            _dump_debug("getTimetable", result)
+            _dump_debug("getTimetable", result, user_id=self.cfg.user_id)
             raise ScrapeError("unexpected getTimetable response")
         return result
 
     def holidays(self):
         result = self._rpc("getHolidays", {})
         if not isinstance(result, list):
-            _dump_debug("getHolidays", result)
+            _dump_debug("getHolidays", result, user_id=self.cfg.user_id)
             raise ScrapeError("unexpected getHolidays response")
         return result
 
     def school_years(self):
         result = self._rpc("getSchoolyears", {})
         if not isinstance(result, list):
-            _dump_debug("getSchoolyears", result)
+            _dump_debug("getSchoolyears", result, user_id=self.cfg.user_id)
             raise ScrapeError("unexpected getSchoolyears response")
         return result
 
@@ -138,12 +138,12 @@ class UntisClient:
         if not r.ok:
             log.warning("calendar-entry/detail %s for %s %s", r.status_code, date, start_hm)
             if r.status_code not in (404,):
-                _dump_debug("detail-error", {"status": r.status_code, "body": r.text[:2000], "params": params})
+                _dump_debug("detail-error", {"status": r.status_code, "body": r.text[:2000], "params": params}, user_id=self.cfg.user_id)
             return ""
         try:
             data = r.json()
         except ValueError:
-            _dump_debug("detail-nonjson", {"body": r.text[:2000], "params": params})
+            _dump_debug("detail-nonjson", {"body": r.text[:2000], "params": params}, user_id=self.cfg.user_id)
             return ""
         texts = []
         for entry in data.get("calendarEntries", []):

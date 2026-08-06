@@ -13,18 +13,19 @@ before that content becomes hard to reach, run by hand, once. It is not
 wired into the running app, its API, or its scheduler in any way, and
 doesn't change the live one-way-flow behavior described there.
 
-Run once, not part of the deployed service - reuses the same image/creds/
-data volume as the real app, so this works identically wherever the app is
-deployed (dev machine or rpi):
+Run once, not part of the deployed service - takes the target user's numeric
+id explicitly (multi-user: there's no single "the" data dir anymore) and
+reuses the same image/data volume as the real app, so this works identically
+wherever the app is deployed (dev machine or rpi):
 
-    docker compose run --rm --entrypoint python berichtsheft app/backfill_ihk_history.py
+    docker compose run --rm --entrypoint python berichtsheft app/backfill_ihk_history.py <user_id>
 """
 
 import datetime as dt
-import json
 import logging
+import sys
 
-from . import config
+from . import db, storage
 from .ihk_client import IhkClient
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -32,7 +33,19 @@ log = logging.getLogger("backfill")
 
 
 def main():
-    client = IhkClient()
+    if len(sys.argv) != 2:
+        print("usage: python -m app.backfill_ihk_history <user_id>", file=sys.stderr)
+        raise SystemExit(1)
+    user_id = int(sys.argv[1])
+
+    user_row = db.get_user_by_id(user_id)
+    if user_row is None:
+        print(f"no such user_id: {user_id}", file=sys.stderr)
+        raise SystemExit(1)
+    settings_row = db.get_user_settings(user_id)
+    settings = db._row_to_settings(settings_row, user_row)
+
+    client = IhkClient(settings)
     client.login()
     try:
         entries = client.list_entries()
@@ -60,10 +73,8 @@ def main():
     finally:
         client.logout()
 
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out = config.DATA_DIR / "ihk_history.json"
-    out.write_text(json.dumps(history, indent=2, ensure_ascii=False))
-    log.info("wrote %d entries to %s", len(history), out)
+    storage.save_ihk_history(user_id, history)
+    log.info("wrote %d entries for user_id=%d", len(history), user_id)
 
 
 if __name__ == "__main__":

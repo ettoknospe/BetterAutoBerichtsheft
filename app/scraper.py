@@ -9,13 +9,13 @@ import-order fragility.
 """
 
 import datetime as dt
-import json
 import logging
 
 from . import config
 from .settings import UserSettings
 from .time_utils import _hm, week_bounds, current_week_id
 from .school_calendar import _is_full_holiday_week, _is_between_school_years
+from . import storage
 from .storage import _dump_debug, _has_real_lessons
 from .untis_client import (
     ScrapeError,
@@ -141,40 +141,32 @@ def scrape_week(week_id: str, settings: UserSettings | None = None) -> dict:
     if not days:
         if unavailable:
             result["unavailable"] = True
-            out = settings.DATA_DIR / f"{week_id}.json"
-            if _has_real_lessons(out):
+            if _has_real_lessons(settings.user_id, week_id):
                 log.info("%s already has real lesson data — not overwriting with unavailable marker", week_id)
             else:
-                settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-                out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
-                log.info("saved %s (beyond WebUntis publish horizon)", out)
+                storage.save_week_data(settings.user_id, week_id, result)
+                log.info("saved %s (beyond WebUntis publish horizon)", week_id)
             return result
         if holiday_periods and _is_full_holiday_week(monday, sunday, holiday_periods):
             result["holiday"] = True
-            settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-            out = settings.DATA_DIR / f"{week_id}.json"
-            out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
-            log.info("saved %s (holiday week)", out)
+            storage.save_week_data(settings.user_id, week_id, result)
+            log.info("saved %s (holiday week)", week_id)
             return result
         if school_years_list and _is_between_school_years(monday, sunday, school_years_list):
             result["holiday"] = True
-            out = settings.DATA_DIR / f"{week_id}.json"
-            if _has_real_lessons(out):
+            if _has_real_lessons(settings.user_id, week_id):
                 log.info("%s already has real lesson data — not overwriting", week_id)
             else:
-                settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-                out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
-                log.info("saved %s (between school years, treated as holiday)", out)
+                storage.save_week_data(settings.user_id, week_id, result)
+                log.info("saved %s (between school years, treated as holiday)", week_id)
             return result
         if school_year_boundary:
             result["schoolYearBoundary"] = True
-            out = settings.DATA_DIR / f"{week_id}.json"
-            if _has_real_lessons(out):
+            if _has_real_lessons(settings.user_id, week_id):
                 log.info("%s already has real lesson data — not overwriting with school-year-boundary marker", week_id)
             else:
-                settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-                out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
-                log.info("saved %s (school-year boundary, not a confirmed holiday)", out)
+                storage.save_week_data(settings.user_id, week_id, result)
+                log.info("saved %s (school-year boundary, not a confirmed holiday)", week_id)
             return result
         if periods:
             # WebUntis returned real periods but every one was cancelled, and
@@ -182,19 +174,15 @@ def scrape_week(week_id: str, settings: UserSettings | None = None) -> dict:
             # still worth surfacing honestly instead of pretending nothing
             # was ever scraped.
             result["allCancelled"] = True
-            out = settings.DATA_DIR / f"{week_id}.json"
-            if _has_real_lessons(out):
+            if _has_real_lessons(settings.user_id, week_id):
                 log.info("%s already has real lesson data — not overwriting with allCancelled marker", week_id)
             else:
-                settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-                out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
-                log.info("saved %s (all periods cancelled, not a confirmed holiday)", out)
+                storage.save_week_data(settings.user_id, week_id, result)
+                log.info("saved %s (all periods cancelled, not a confirmed holiday)", week_id)
             return result
         log.info("no lessons in %s — nothing saved", week_id)
         return result
 
-    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out = settings.DATA_DIR / f"{week_id}.json"
-    out.write_text(json.dumps(result, indent=2, ensure_ascii=False))
-    log.info("saved %s (%d lessons)", out, sum(len(d["lessons"]) for d in days))
+    storage.save_week_data(settings.user_id, week_id, result)
+    log.info("saved %s (%d lessons)", week_id, sum(len(d["lessons"]) for d in days))
     return result

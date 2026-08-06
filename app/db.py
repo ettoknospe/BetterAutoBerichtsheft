@@ -325,6 +325,7 @@ def _row_to_settings(settings_row, user_row) -> UserSettings:
         IHK_USE_SETTINGS_FOR_ABSCHNITT=bool(row_dict.get("ihk_use_settings_for_abschnitt", 1)),
         SCRAPE_DAY=row_dict["scrape_day"],
         SCRAPE_TIME=row_dict["scrape_time"],
+        user_id=user_row["id"],
     )
 
 

@@ -27,3 +27,7 @@ SCRAPE_TIME = os.environ.get("SCRAPE_TIME", "18:00")
 SECRET_ENCRYPTION_KEY = os.environ.get("SECRET_ENCRYPTION_KEY", "")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+# Raw WebUntis/IHK response dumps bypass per-user storage entirely (plaintext,
+# unencrypted) - dev-only, must stay off in production.
+DEBUG_DUMPS = os.environ.get("DEBUG_DUMPS", "").lower() in ("1", "true", "yes")

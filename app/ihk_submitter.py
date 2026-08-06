@@ -10,10 +10,9 @@ button (see AGENTS.md-style rationale in the plan doc).
 """
 
 import datetime as dt
-import json
 import logging
 
-from . import config
+from . import config, storage
 from .settings import UserSettings
 from .ihk_client import IhkClient, IhkError
 from .time_utils import current_week_id, week_bounds
@@ -67,9 +66,7 @@ def sync_status(settings: UserSettings | None = None):
         for week_id, e in entries.items()
     }
 
-    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out = settings.DATA_DIR / "ihk_status.json"
-    out.write_text(json.dumps(status, indent=2, ensure_ascii=False))
+    storage.save_ihk_status(settings.user_id, status)
     log.info("synced IHK status for %d weeks", len(status))
     return status
 
@@ -77,13 +74,7 @@ def sync_status(settings: UserSettings | None = None):
 def load_status(settings: UserSettings | None = None) -> dict:
     """Read the last-synced status map, or {} if never synced."""
     settings = settings or UserSettings.from_config()
-    path = settings.DATA_DIR / "ihk_status.json"
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
-        return {}
+    return storage.load_ihk_status(settings.user_id)
 
 
 def save_local_fields(week_id: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None, settings: UserSettings | None = None) -> dict:
@@ -111,22 +102,14 @@ def save_local_fields(week_id: str, ausbinhalt1: str | None = None, ausbinhalt2:
     entry["savedAt"] = dt.datetime.now().isoformat(timespec="seconds")
     fields[week_id] = entry
 
-    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    out = settings.DATA_DIR / "ihk_fields.json"
-    out.write_text(json.dumps(fields, indent=2, ensure_ascii=False))
+    storage.save_local_fields(settings.user_id, fields)
     return entry
 
 
 def load_local_fields(settings: UserSettings | None = None) -> dict:
     """Read the locally-remembered ausbinhalt1/2 map, or {} if none saved yet."""
     settings = settings or UserSettings.from_config()
-    path = settings.DATA_DIR / "ihk_fields.json"
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
-        return {}
+    return storage.load_local_fields(settings.user_id)
 
 
 def load_history(settings: UserSettings | None = None) -> dict:
@@ -134,13 +117,7 @@ def load_history(settings: UserSettings | None = None) -> dict:
     the backfill has never been run. See backfill_ihk_history.py - this is a
     static snapshot, not kept in sync automatically."""
     settings = settings or UserSettings.from_config()
-    path = settings.DATA_DIR / "ihk_history.json"
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text())
-    except json.JSONDecodeError:
-        return {}
+    return storage.load_ihk_history(settings.user_id)
 
 
 def submit_week(week_id: str, formatted_text: str, ausbinhalt1: str | None = None, ausbinhalt2: str | None = None, settings: UserSettings | None = None):

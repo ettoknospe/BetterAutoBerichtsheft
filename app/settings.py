@@ -28,6 +28,7 @@ class UserSettings:
     IHK_USE_SETTINGS_FOR_ABSCHNITT: bool = True
     SCRAPE_DAY: str = "off"
     SCRAPE_TIME: str = "18:00"
+    user_id: int | None = None
 
     @classmethod
     def from_config(cls) -> "UserSettings":

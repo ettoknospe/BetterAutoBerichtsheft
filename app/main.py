@@ -1,5 +1,4 @@
 import datetime as dt
-import json
 import logging
 import re
 import threading
@@ -10,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Depends, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, auth, scraper, ihk_submitter, untis_client, ihk_client
+from . import config, db, auth, scraper, ihk_submitter, untis_client, ihk_client, storage
 from .settings import UserSettings
 from .ihk_client import IhkError
 
@@ -216,6 +215,7 @@ async def test_untis_connection(req: SettingsUpdateRequest, user: auth.AuthedUse
         IHK_AUSB_MAIL=current_settings.IHK_AUSB_MAIL,
         SCRAPE_DAY=current_settings.SCRAPE_DAY,
         SCRAPE_TIME=current_settings.SCRAPE_TIME,
+        user_id=current_settings.user_id,
     )
 
     if not test_settings.UNTIS_USER or not test_settings.UNTIS_PASS:
@@ -252,6 +252,7 @@ async def test_ihk_connection(req: SettingsUpdateRequest, user: auth.AuthedUser 
         IHK_AUSB_MAIL=req.ihk_ausb_mail or current_settings.IHK_AUSB_MAIL,
         SCRAPE_DAY=current_settings.SCRAPE_DAY,
         SCRAPE_TIME=current_settings.SCRAPE_TIME,
+        user_id=current_settings.user_id,
     )
 
     if not test_settings.IHK_USER or not test_settings.IHK_PASS:
@@ -275,8 +276,7 @@ def list_weeks(user: auth.AuthedUser = Depends(auth.require_user)):
     user_row = db.get_user_by_id(user.id)
     settings_row = db.get_user_settings(user.id)
     settings = db._row_to_settings(settings_row, user_row)
-    settings.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    weeks = sorted(p.stem for p in settings.DATA_DIR.glob("*-W*.json") if WEEK_RE.match(p.stem))
+    weeks = storage.list_week_ids(settings.user_id)
     return {"weeks": weeks, "current": scraper.current_week_id()}
 
 @app.get("/api/weeks/{week_id}")
@@ -288,10 +288,10 @@ def get_week(week_id: str, user: auth.AuthedUser = Depends(auth.require_user)):
     user_row = db.get_user_by_id(user.id)
     settings_row = db.get_user_settings(user.id)
     settings = db._row_to_settings(settings_row, user_row)
-    path = settings.DATA_DIR / f"{week_id}.json"
-    if not path.exists():
+    data = storage.load_week_data(settings.user_id, week_id)
+    if data is None:
         raise HTTPException(status_code=404, detail="no data for this week")
-    return json.loads(path.read_text())
+    return data
 
 @app.post("/api/scrape")
 def scrape(req: ScrapeRequest, user: auth.AuthedUser = Depends(auth.require_user)):
