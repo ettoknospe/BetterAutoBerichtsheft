@@ -68,6 +68,43 @@ MIGRATIONS = [
     (7, """
     ALTER TABLE user_settings ADD COLUMN ihk_use_settings_for_abschnitt INTEGER NOT NULL DEFAULT 1
     """),
+    (8, """
+    CREATE TABLE IF NOT EXISTS week_data (
+        user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        week_id     TEXT NOT NULL,
+        payload_enc BLOB NOT NULL,
+        updated_at  TEXT NOT NULL,
+        PRIMARY KEY (user_id, week_id)
+    )
+    """),
+    (9, """
+    CREATE TABLE IF NOT EXISTS ihk_history (
+        user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        payload_enc BLOB NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """),
+    (10, """
+    CREATE TABLE IF NOT EXISTS ihk_status (
+        user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        payload_enc BLOB NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """),
+    (11, """
+    CREATE TABLE IF NOT EXISTS local_fields (
+        user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        payload_enc BLOB NOT NULL,
+        updated_at  TEXT NOT NULL
+    )
+    """),
+    (12, """
+    CREATE TABLE IF NOT EXISTS user_keys (
+        user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+        dek_wrapped BLOB NOT NULL,
+        created_at  TEXT NOT NULL
+    )
+    """),
 ]
 
 
@@ -131,6 +168,32 @@ def run_migrations():
         conn.close()
 
 
+def _create_user_dek(conn, user_id: int) -> None:
+    """Generate a random per-user data-encryption key, wrap it with the
+    master SECRET_ENCRYPTION_KEY, and store it. Called inside the same
+    transaction as user creation - a user must never exist without a DEK,
+    or their week/IHK data has nothing to encrypt under."""
+    dek = crypto.generate_dek()
+    wrapped = crypto.encrypt(dek.decode())
+    conn.execute(
+        "INSERT INTO user_keys (user_id, dek_wrapped, created_at) VALUES (?, ?, ?)",
+        (user_id, wrapped, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+    )
+
+
+def get_user_dek(user_id: int) -> bytes:
+    """Fetch and unwrap a user's data-encryption key. Raises if missing -
+    silently falling back to no encryption would be worse than a loud error."""
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT dek_wrapped FROM user_keys WHERE user_id = ?", (user_id,)).fetchone()
+        if row is None:
+            raise RuntimeError(f"no data-encryption key for user_id={user_id}")
+        return crypto.decrypt(row["dek_wrapped"]).encode()
+    finally:
+        conn.close()
+
+
 def bootstrap_admin_if_needed():
     """On first boot, create admin account if ADMIN_PASSWORD is set.
 
@@ -177,6 +240,8 @@ def bootstrap_admin_if_needed():
             INSERT INTO user_settings (user_id, updated_at) VALUES (?, ?)
         """, (admin_id, now_iso))
 
+        _create_user_dek(conn, admin_id)
+
         conn.commit()
         log.info("Bootstrapped admin account '%s' (id=%d)", admin_username, admin_id)
 
@@ -204,6 +269,8 @@ def create_user(username: str, password_hash: str, is_admin: bool = False) -> in
         cursor = conn.execute("""
             INSERT INTO user_settings (user_id, updated_at) VALUES (?, ?)
         """, (user_id, datetime.now(timezone.utc).isoformat(timespec="seconds")))
+
+        _create_user_dek(conn, user_id)
 
         conn.commit()
         return user_id
@@ -370,3 +437,88 @@ def delete_session(session_id: str):
         conn.commit()
     finally:
         conn.close()
+
+
+# ===== Encrypted per-user blob storage (week data, IHK history/status/fields) =====
+# All payloads are opaque ciphertext to this layer - encryption/decryption with
+# the user's DEK happens in storage.py, not here.
+
+def save_week_data_row(user_id: int, week_id: str, payload_enc: bytes) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            "INSERT INTO week_data (user_id, week_id, payload_enc, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (user_id, week_id) DO UPDATE SET payload_enc = excluded.payload_enc, updated_at = excluded.updated_at",
+            (user_id, week_id, payload_enc, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def get_week_data_row(user_id: int, week_id: str) -> bytes | None:
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT payload_enc FROM week_data WHERE user_id = ? AND week_id = ?", (user_id, week_id)
+        ).fetchone()
+        return row["payload_enc"] if row else None
+    finally:
+        conn.close()
+
+
+def list_week_ids_for_user(user_id: int) -> list[str]:
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT week_id FROM week_data WHERE user_id = ? ORDER BY week_id", (user_id,)
+        ).fetchall()
+        return [r["week_id"] for r in rows]
+    finally:
+        conn.close()
+
+
+def _save_single_blob(table: str, user_id: int, payload_enc: bytes) -> None:
+    conn = get_connection()
+    try:
+        conn.execute(
+            f"INSERT INTO {table} (user_id, payload_enc, updated_at) VALUES (?, ?, ?) "
+            f"ON CONFLICT (user_id) DO UPDATE SET payload_enc = excluded.payload_enc, updated_at = excluded.updated_at",
+            (user_id, payload_enc, datetime.now(timezone.utc).isoformat(timespec="seconds")),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_single_blob(table: str, user_id: int) -> bytes | None:
+    conn = get_connection()
+    try:
+        row = conn.execute(f"SELECT payload_enc FROM {table} WHERE user_id = ?", (user_id,)).fetchone()
+        return row["payload_enc"] if row else None
+    finally:
+        conn.close()
+
+
+def save_ihk_history_row(user_id: int, payload_enc: bytes) -> None:
+    _save_single_blob("ihk_history", user_id, payload_enc)
+
+
+def get_ihk_history_row(user_id: int) -> bytes | None:
+    return _get_single_blob("ihk_history", user_id)
+
+
+def save_ihk_status_row(user_id: int, payload_enc: bytes) -> None:
+    _save_single_blob("ihk_status", user_id, payload_enc)
+
+
+def get_ihk_status_row(user_id: int) -> bytes | None:
+    return _get_single_blob("ihk_status", user_id)
+
+
+def save_local_fields_row(user_id: int, payload_enc: bytes) -> None:
+    _save_single_blob("local_fields", user_id, payload_enc)
+
+
+def get_local_fields_row(user_id: int) -> bytes | None:
+    return _get_single_blob("local_fields", user_id)
