@@ -5,3 +5,8 @@ __pycache__/
 .pytest_cache/
 graphify-out/
 .claude/
+old-project/
+logo.png
+logo.svg
+sync-svgrepo-com.svg
+help.svg

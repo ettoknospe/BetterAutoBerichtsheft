@@ -163,12 +163,12 @@
   <div class="section">
     <h2>WebUntis - Wochen abrufen</h2>
     <div class="form-group">
-      <label for="startWeek">Von (z.B. 2026-W10):</label>
-      <input type="text" id="startWeek" placeholder="2026-W10">
+      <label for="startDate">Von (z.B. 01.08.2026):</label>
+      <input type="text" id="startDate" placeholder="01.08.2026">
     </div>
     <div class="form-group">
-      <label for="endWeek">Bis (z.B. 2026-W20):</label>
-      <input type="text" id="endWeek" placeholder="2026-W20">
+      <label for="endDate">Bis (z.B. 09.08.2026):</label>
+      <input type="text" id="endDate" placeholder="09.08.2026">
     </div>
     <button id="scrapeBtn">Alle Wochen abrufen</button>
     <div id="scrapeStatus"></div>
@@ -190,16 +190,47 @@ function setStatus(el, msg, cls = "") {
   el.className = cls;
 }
 
+// Parse dd.mm.yyyy and return Date object
+function parseDate(str) {
+  const parts = str.trim().split(".");
+  if (parts.length !== 3) return null;
+  const day = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10);
+  const year = parseInt(parts[2], 10);
+  if (!day || !month || !year || month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return new Date(year, month - 1, day);
+}
+
+// Convert Date to ISO week (YYYY-Www format)
+function dateToWeek(date) {
+  const d = new Date(date);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+  const yearStart = new Date(d.getFullYear(), 0, 1);
+  const weekNum = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return `${d.getFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+}
+
 $("scrapeBtn").onclick = async () => {
   const btn = $("scrapeBtn");
   const status = $("scrapeStatus");
-  const startWeek = $("startWeek").value.trim();
-  const endWeek = $("endWeek").value.trim();
+  const startDateStr = $("startDate").value.trim();
+  const endDateStr = $("endDate").value.trim();
 
-  if (!startWeek || !endWeek) {
-    setStatus(status, "Bitte beide Wochen eingeben", "err");
+  if (!startDateStr || !endDateStr) {
+    setStatus(status, "Bitte beide Daten eingeben", "err");
     return;
   }
+
+  const startDate = parseDate(startDateStr);
+  const endDate = parseDate(endDateStr);
+  if (!startDate || !endDate) {
+    setStatus(status, "Ungültiges Datumsformat. Verwende dd.mm.yyyy (z.B. 01.08.2026)", "err");
+    return;
+  }
+
+  const startWeek = dateToWeek(startDate);
+  const endWeek = dateToWeek(endDate);
 
   btn.disabled = true;
   setStatus(status, "Rufe Wochen ab...", "loading");

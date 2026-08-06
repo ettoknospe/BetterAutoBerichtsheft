@@ -35,7 +35,6 @@ MIGRATIONS = [
         untis_school       TEXT NOT NULL DEFAULT '',
         untis_user         TEXT NOT NULL DEFAULT '',
         untis_pass_enc     BLOB,
-        subject_filter     TEXT NOT NULL DEFAULT '',
         scrape_day         TEXT NOT NULL DEFAULT 'off',
         scrape_time        TEXT NOT NULL DEFAULT '18:00',
         ihk_host           TEXT NOT NULL DEFAULT '',
@@ -66,6 +65,9 @@ MIGRATIONS = [
         applied_at TEXT NOT NULL
     )
     """),
+    (7, """
+    ALTER TABLE user_settings ADD COLUMN ihk_use_settings_for_abschnitt INTEGER NOT NULL DEFAULT 1
+    """),
 ]
 
 
@@ -84,17 +86,22 @@ def run_migrations():
     """Apply pending schema migrations."""
     conn = get_connection()
     try:
-        # Ensure schema_migrations table exists
-        conn.execute(MIGRATIONS[-1][1])  # Create schema_migrations table
-        conn.commit()
+        # Ensure schema_migrations table exists (it's the 6th migration)
+        try:
+            conn.execute(MIGRATIONS[5][1])  # Create schema_migrations table
+            conn.commit()
+        except Exception:
+            pass  # Table already exists
 
         # Get current schema version
         cursor = conn.execute("SELECT MAX(version) FROM schema_migrations")
         result = cursor.fetchone()
         current_version = result[0] if result[0] is not None else 0
 
-        # Apply pending migrations
-        for version, sql in MIGRATIONS[:-1]:  # Skip schema_migrations table itself
+        # Apply pending migrations (all except schema_migrations table)
+        for version, sql in MIGRATIONS:
+            if version == 6:  # Skip schema_migrations table, already created
+                continue
             if version > current_version:
                 try:
                     conn.execute(sql)
@@ -102,8 +109,22 @@ def run_migrations():
                                (version, datetime.now(timezone.utc).isoformat(timespec="seconds")))
                     conn.commit()
                     log.info("Applied migration %d", version)
+                except sqlite3.OperationalError as e:
+                    if "duplicate column" in str(e) or "already exists" in str(e):
+                        # Column or index already exists, mark as applied
+                        try:
+                            conn.execute("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                                       (version, datetime.now(timezone.utc).isoformat(timespec="seconds")))
+                            conn.commit()
+                            log.info("Migration %d already applied", version)
+                        except:
+                            conn.rollback()
+                    else:
+                        conn.rollback()
+                        log.exception("Migration %d failed", version)
                 except Exception as e:
                     conn.rollback()
+                    log.exception("Migration %d failed", version)
                     log.error("Migration %d failed: %s", version, e)
                     raise
     finally:
@@ -224,7 +245,7 @@ def update_user_settings(user_id: int, **kwargs) -> UserSettings:
     """Update user_settings fields and return rebuilt UserSettings object.
 
     Supported kwargs: untis_host, untis_school, untis_user, untis_pass,
-    subject_filter (list), scrape_day, scrape_time, ihk_host, ihk_user,
+    scrape_day, scrape_time, ihk_host, ihk_user,
     ihk_pass, ihk_ausbabschnitt, ihk_ausb_mail.
 
     Passwords are encrypted before storage; None/empty = leave unchanged.
@@ -248,12 +269,6 @@ def update_user_settings(user_id: int, **kwargs) -> UserSettings:
             val = kwargs.pop("ihk_pass")
             if val:
                 updates["ihk_pass_enc"] = crypto.encrypt(val)
-
-        # Handle subject_filter list → comma-joined string
-        if "subject_filter" in kwargs:
-            val = kwargs.pop("subject_filter")
-            if val:
-                updates["subject_filter"] = ",".join(val)
 
         # Everything else passes through
         updates.update(kwargs)
@@ -280,36 +295,36 @@ def _row_to_settings(settings_row, user_row) -> UserSettings:
     if not settings_row:
         raise ValueError("No settings row")
 
+    row_dict = dict(settings_row)
+
     untis_pass = ""
-    if settings_row["untis_pass_enc"]:
+    if row_dict["untis_pass_enc"]:
         try:
-            untis_pass = crypto.decrypt(settings_row["untis_pass_enc"])
+            untis_pass = crypto.decrypt(row_dict["untis_pass_enc"])
         except RuntimeError:
             log.warning("Could not decrypt UNTIS_PASS for user %s", user_row["id"])
 
     ihk_pass = ""
-    if settings_row["ihk_pass_enc"]:
+    if row_dict["ihk_pass_enc"]:
         try:
-            ihk_pass = crypto.decrypt(settings_row["ihk_pass_enc"])
+            ihk_pass = crypto.decrypt(row_dict["ihk_pass_enc"])
         except RuntimeError:
             log.warning("Could not decrypt IHK_PASS for user %s", user_row["id"])
 
-    subject_filter = [s.strip() for s in settings_row["subject_filter"].split(",") if s.strip()]
-
     return UserSettings(
-        UNTIS_HOST=settings_row["untis_host"] or "",
-        UNTIS_SCHOOL=settings_row["untis_school"] or "",
-        UNTIS_USER=settings_row["untis_user"] or "",
+        UNTIS_HOST=row_dict["untis_host"] or "",
+        UNTIS_SCHOOL=row_dict["untis_school"] or "",
+        UNTIS_USER=row_dict["untis_user"] or "",
         UNTIS_PASS=untis_pass,
-        SUBJECT_FILTER=subject_filter,
         DATA_DIR=config.DATA_DIR / str(user_row["id"]),
-        IHK_HOST=settings_row["ihk_host"] or "",
-        IHK_USER=settings_row["ihk_user"] or "",
+        IHK_HOST=row_dict["ihk_host"] or "",
+        IHK_USER=row_dict["ihk_user"] or "",
         IHK_PASS=ihk_pass,
-        IHK_AUSBABSCHNITT=settings_row["ihk_ausbabschnitt"] or "",
-        IHK_AUSB_MAIL=settings_row["ihk_ausb_mail"] or "",
-        SCRAPE_DAY=settings_row["scrape_day"],
-        SCRAPE_TIME=settings_row["scrape_time"],
+        IHK_AUSBABSCHNITT=row_dict["ihk_ausbabschnitt"] or "",
+        IHK_AUSB_MAIL=row_dict["ihk_ausb_mail"] or "",
+        IHK_USE_SETTINGS_FOR_ABSCHNITT=bool(row_dict.get("ihk_use_settings_for_abschnitt", 1)),
+        SCRAPE_DAY=row_dict["scrape_day"],
+        SCRAPE_TIME=row_dict["scrape_time"],
     )
 
 

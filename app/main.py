@@ -46,6 +46,8 @@ class SubmitIhkRequest(BaseModel):
     text: str
     ausbinhalt1: str | None = None
     ausbinhalt2: str | None = None
+    ihk_abschnitt_override: str | None = None
+    ihk_ausb_mail_override: str | None = None
 
 class BulkScrapeRequest(BaseModel):
     startWeek: str
@@ -72,7 +74,6 @@ class SettingsUpdateRequest(BaseModel):
     untis_school: str | None = None
     untis_user: str | None = None
     untis_pass: str | None = None
-    subject_filter: str | None = None
     scrape_day: str | None = None
     scrape_time: str | None = None
     ihk_host: str | None = None
@@ -80,6 +81,7 @@ class SettingsUpdateRequest(BaseModel):
     ihk_pass: str | None = None
     ihk_ausbabschnitt: str | None = None
     ihk_ausb_mail: str | None = None
+    ihk_use_settings_for_abschnitt: bool | None = None
 
 # ===== Auth Endpoints =====
 
@@ -142,19 +144,20 @@ async def get_settings(user: auth.AuthedUser = Depends(auth.require_user)):
     if not row:
         raise HTTPException(status_code=404, detail="Settings not found")
 
+    row_dict = dict(row)
     return {
-        "untis_host": row["untis_host"],
-        "untis_school": row["untis_school"],
-        "untis_user": row["untis_user"],
-        "untis_pass_set": bool(row["untis_pass_enc"]),
-        "subject_filter": row["subject_filter"],
-        "scrape_day": row["scrape_day"],
-        "scrape_time": row["scrape_time"],
-        "ihk_host": row["ihk_host"],
-        "ihk_user": row["ihk_user"],
-        "ihk_pass_set": bool(row["ihk_pass_enc"]),
-        "ihk_ausbabschnitt": row["ihk_ausbabschnitt"],
-        "ihk_ausb_mail": row["ihk_ausb_mail"],
+        "untis_host": row_dict["untis_host"],
+        "untis_school": row_dict["untis_school"],
+        "untis_user": row_dict["untis_user"],
+        "untis_pass_set": bool(row_dict["untis_pass_enc"]),
+        "scrape_day": row_dict["scrape_day"],
+        "scrape_time": row_dict["scrape_time"],
+        "ihk_host": row_dict["ihk_host"],
+        "ihk_user": row_dict["ihk_user"],
+        "ihk_pass_set": bool(row_dict["ihk_pass_enc"]),
+        "ihk_ausbabschnitt": row_dict["ihk_ausbabschnitt"],
+        "ihk_ausb_mail": row_dict["ihk_ausb_mail"],
+        "ihk_use_settings_for_abschnitt": bool(row_dict.get("ihk_use_settings_for_abschnitt", 1)),
     }
 
 @app.put("/api/me/settings")
@@ -162,12 +165,11 @@ async def update_settings(req: SettingsUpdateRequest, user: auth.AuthedUser = De
     """Update user's settings."""
     updates = {}
     for field in ["untis_host", "untis_school", "untis_user", "untis_pass",
-                  "subject_filter", "scrape_day", "scrape_time",
-                  "ihk_host", "ihk_user", "ihk_pass", "ihk_ausbabschnitt", "ihk_ausb_mail"]:
+                  "scrape_day", "scrape_time",
+                  "ihk_host", "ihk_user", "ihk_pass", "ihk_ausbabschnitt", "ihk_ausb_mail",
+                  "ihk_use_settings_for_abschnitt"]:
         val = getattr(req, field, None)
         if val is not None:
-            if field == "subject_filter":
-                val = [s.strip() for s in val.split(",") if s.strip()]
             updates[field] = val
 
     try:
@@ -206,7 +208,6 @@ async def test_untis_connection(req: SettingsUpdateRequest, user: auth.AuthedUse
         UNTIS_SCHOOL=req.untis_school or current_settings.UNTIS_SCHOOL,
         UNTIS_USER=req.untis_user or current_settings.UNTIS_USER,
         UNTIS_PASS=req.untis_pass or current_settings.UNTIS_PASS,
-        SUBJECT_FILTER=current_settings.SUBJECT_FILTER,
         DATA_DIR=current_settings.DATA_DIR,
         IHK_HOST=current_settings.IHK_HOST,
         IHK_USER=current_settings.IHK_USER,
@@ -243,7 +244,6 @@ async def test_ihk_connection(req: SettingsUpdateRequest, user: auth.AuthedUser 
         UNTIS_SCHOOL=current_settings.UNTIS_SCHOOL,
         UNTIS_USER=current_settings.UNTIS_USER,
         UNTIS_PASS=current_settings.UNTIS_PASS,
-        SUBJECT_FILTER=current_settings.SUBJECT_FILTER,
         DATA_DIR=current_settings.DATA_DIR,
         IHK_HOST=req.ihk_host or current_settings.IHK_HOST,
         IHK_USER=req.ihk_user or current_settings.IHK_USER,
@@ -362,6 +362,15 @@ def submit_ihk(req: SubmitIhkRequest, user: auth.AuthedUser = Depends(auth.requi
         user_row = db.get_user_by_id(user.id)
         settings_row = db.get_user_settings(user.id)
         settings = db._row_to_settings(settings_row, user_row)
+
+        # Use override values if provided, otherwise use settings
+        ihk_abschnitt = req.ihk_abschnitt_override or settings.IHK_AUSBABSCHNITT
+        ihk_ausb_mail = req.ihk_ausb_mail_override or settings.IHK_AUSB_MAIL
+
+        # Temporarily update settings with per-submission values
+        settings.IHK_AUSBABSCHNITT = ihk_abschnitt
+        settings.IHK_AUSB_MAIL = ihk_ausb_mail
+
         # MANDATORY: settings= passed explicitly
         ihk_submitter.submit_week(req.week, req.text, req.ausbinhalt1, req.ausbinhalt2, settings=settings)
         ihk_submitter.save_local_fields(req.week, req.ausbinhalt1, req.ausbinhalt2, settings=settings)

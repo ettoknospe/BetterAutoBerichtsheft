@@ -313,11 +313,7 @@
                     <div class="form-row">
                         <div class="form-group">
                             <label for="untis_host">Host</label>
-                            <input type="text" id="untis_host" placeholder="e.g., exemple.webuntis.com">
-                        </div>
-                        <div class="form-group">
-                            <label for="untis_school">School</label>
-                            <input type="text" id="untis_school" placeholder="e.g., gymnasium">
+                            <input type="text" id="untis_host" placeholder="e.g., example.webuntis.com">
                         </div>
                     </div>
                     <div class="form-row">
@@ -330,10 +326,6 @@
                             <input type="password" id="untis_pass" placeholder="WebUntis password">
                             <div class="password-note">Leave blank to keep existing password</div>
                         </div>
-                    </div>
-                    <div class="form-group">
-                        <label for="subject_filter">Subject Filter (comma-separated)</label>
-                        <input type="text" id="subject_filter" placeholder="e.g., Math, English, History">
                     </div>
                 </fieldset>
                 <div class="button-group">
@@ -404,6 +396,13 @@
                         <div class="form-group">
                             <label for="ihk_ausb_mail">Ausbilder Mail</label>
                             <input type="email" id="ihk_ausb_mail" placeholder="trainer@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="ihk_use_settings">
+                                <input type="checkbox" id="ihk_use_settings" checked>
+                                Always use these values (don't ask per week)
+                            </label>
+                            <small>Uncheck to enter Ausbildungsabschnitt and Ausbilder Mail for each week submission</small>
                         </div>
                     </div>
                 </fieldset>
@@ -507,9 +506,7 @@
                 currentSettings = await res.json();
 
                 document.getElementById('untis_host').value = currentSettings.untis_host || '';
-                document.getElementById('untis_school').value = currentSettings.untis_school || '';
                 document.getElementById('untis_user').value = currentSettings.untis_user || '';
-                document.getElementById('subject_filter').value = currentSettings.subject_filter || '';
 
                 document.getElementById('scrape_day').value = currentSettings.scrape_day || 'off';
                 document.getElementById('scrape_time').value = currentSettings.scrape_time || '18:00';
@@ -518,6 +515,8 @@
                 document.getElementById('ihk_user').value = currentSettings.ihk_user || '';
                 document.getElementById('ihk_ausbabschnitt').value = currentSettings.ihk_ausbabschnitt || '';
                 document.getElementById('ihk_ausb_mail').value = currentSettings.ihk_ausb_mail || '';
+                document.getElementById('ihk_use_settings').checked = currentSettings.ihk_use_settings_for_abschnitt !== false;
+
             } catch (err) {
                 console.error('Failed to load settings:', err);
             }
@@ -552,10 +551,8 @@
             e.preventDefault();
             await saveSettings('untis', {
                 untis_host: document.getElementById('untis_host').value,
-                untis_school: document.getElementById('untis_school').value,
                 untis_user: document.getElementById('untis_user').value,
-                untis_pass: document.getElementById('untis_pass').value || null,
-                subject_filter: document.getElementById('subject_filter').value
+                untis_pass: document.getElementById('untis_pass').value || null
             }, e);
         }
 
@@ -574,7 +571,8 @@
                 ihk_user: document.getElementById('ihk_user').value,
                 ihk_pass: document.getElementById('ihk_pass').value || null,
                 ihk_ausbabschnitt: document.getElementById('ihk_ausbabschnitt').value,
-                ihk_ausb_mail: document.getElementById('ihk_ausb_mail').value
+                ihk_ausb_mail: document.getElementById('ihk_ausb_mail').value,
+                ihk_use_settings_for_abschnitt: document.getElementById('ihk_use_settings').checked
             }, e);
         }
 
@@ -696,7 +694,6 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         untis_host: document.getElementById('untis_host').value,
-                        untis_school: document.getElementById('untis_school').value,
                         untis_user: document.getElementById('untis_user').value,
                         untis_pass: document.getElementById('untis_pass').value || null
                     })

@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<title>Hilfe - BetterAutoBerichtsheft</title>
+<style>
+  :root {
+    --bg: #fafbfc; --card: #ffffff; --text: #0f1419; --text-muted: #57606a;
+    --accent: #3b82f6; --accent-dark: #2563eb; --border: #d5dce0;
+    --ok: #34c759; --err: #ef4444; --warn: #c9960c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1419; --card: #1a1f28; --text: #f5f7fa; --text-muted: #a0a9b8;
+      --border: #2d3544;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+
+  body {
+    font: 16px/1.5 -apple-system, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem 1rem;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  h1 { font-size: 2rem; margin-bottom: 0.5rem; }
+  .subtitle { color: var(--text-muted); margin-bottom: 2rem; }
+
+  .back-link {
+    display: inline-block;
+    margin-bottom: 1.5rem;
+    color: var(--accent);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .back-link:hover {
+    text-decoration: underline;
+  }
+
+  section {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+  }
+
+  h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+    color: var(--accent);
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 0.5rem;
+  }
+
+  h3 {
+    font-size: 1.1rem;
+    margin-top: 1.5rem;
+    margin-bottom: 0.75rem;
+    font-weight: 600;
+  }
+
+  p { margin-bottom: 1rem; line-height: 1.6; }
+
+  ul, ol {
+    margin: 1rem 0 1rem 1.5rem;
+    line-height: 1.8;
+  }
+
+  li { margin-bottom: 0.5rem; }
+
+  .field {
+    background: var(--bg);
+    border-left: 4px solid var(--accent);
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 4px;
+  }
+
+  .field strong {
+    color: var(--accent);
+  }
+
+  .code {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 1rem;
+    font-family: monospace;
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+    overflow-x: auto;
+  }
+
+  .note {
+    background: rgba(59, 130, 246, 0.1);
+    border-left: 4px solid var(--accent);
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 4px;
+  }
+
+  .warning {
+    background: rgba(201, 150, 12, 0.1);
+    border-left: 4px solid var(--warn);
+    padding: 1rem;
+    margin: 1rem 0;
+    border-radius: 4px;
+    color: var(--warn);
+  }
+
+  .button-guide {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+    margin: 1rem 0;
+  }
+
+  .button-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  .button-card strong {
+    color: var(--accent);
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <a href="/" class="back-link">← Zurück</a>
+
+  <h1>Berichtsheft Hilfe</h1>
+  <p class="subtitle">Alles was du über BetterAutoBerichtsheft wissen musst</p>
+
+  <!-- What is it? -->
+  <section>
+    <h2>Was ist BetterAutoBerichtsheft?</h2>
+    <p>
+      BetterAutoBerichtsheft ist ein automatisiertes System zur Verwaltung deines Ausbildungsberichts (Berichtsheft).
+      Die App holt deine Unterrichtsdaten automatisch aus WebUntis und hilft dir, diese an die IHK-Plattform zu übermitteln.
+    </p>
+    <h3>Die Hauptfunktionen:</h3>
+    <ul>
+      <li><strong>Automatisches Scraping:</strong> Deine Stundenplan- und Unterrichtsdaten von WebUntis</li>
+      <li><strong>Intelligente Anzeige:</strong> Übersichtliche Darstellung der abgerufenen Lektionen</li>
+      <li><strong>IHK-Integration:</strong> Direkte Einreichung deiner Berichte zur IHK-Plattform</li>
+      <li><strong>Automatische Planung:</strong> Regelmäßige automatische Abfragen nach Zeitplan</li>
+      <li><strong>Massenabruf:</strong> Schnelles Importieren mehrerer Wochen auf einmal (Datenimport)</li>
+    </ul>
+  </section>
+
+  <!-- How it works -->
+  <section>
+    <h2>Wie funktioniert es?</h2>
+    <p>
+      Die App arbeitet in folgenden Schritten:
+    </p>
+    <ol>
+      <li><strong>Login:</strong> Du meldest dich mit deinem Benutzer an</li>
+      <li><strong>Einrichtung:</strong> Du konfigurierst deine WebUntis- und IHK-Zugangsdaten in den Einstellungen</li>
+      <li><strong>Abruf:</strong> Die App ruft deine Stundenplan-Daten aus WebUntis ab</li>
+      <li><strong>Anzeige:</strong> Die Lektionen werden übersichtlich in der Wochenansicht gezeigt</li>
+      <li><strong>Einreichung:</strong> Du kannst die Daten direkt zur IHK-Plattform einreichen</li>
+    </ol>
+  </section>
+
+  <!-- Setup -->
+  <section>
+    <h2>Einrichtung</h2>
+
+    <h3>1. Einstellungen öffnen</h3>
+    <p>Klicke auf das ⚙ Symbol in der Seitenleiste, um zu den Einstellungen zu gehen.</p>
+
+    <h3>2. WebUntis Daten eintragen</h3>
+    <p>Im Tab "WebUntis" gibst du folgende Informationen ein:</p>
+
+    <div class="field">
+      <strong>Host:</strong> Die WebUntis-URL deiner Schule, z.B. <code>le-bk-muenster.webuntis.com</code>
+      <br><small>→ Gehe auf die WebUntis-Seite deiner Schule und kopiere den Hostnamen aus der URL (ohne https://)</small>
+    </div>
+
+    <div class="field">
+      <strong>Schule:</strong> Der Schulcode, z.B. <code>le-bk-muenster</code>
+      <br><small>→ Dies ist meist der erste Teil der WebUntis-URL vor dem Punkt</small>
+    </div>
+
+    <div class="field">
+      <strong>Benutzer:</strong> Dein WebUntis Benutzername
+      <br><small>→ Das ist der Name, mit dem du dich normalerweise bei WebUntis anmeldest</small>
+    </div>
+
+    <div class="field">
+      <strong>Passwort:</strong> Dein WebUntis Passwort
+      <br><small>→ Das ist dein normales WebUntis-Login-Passwort</small>
+    </div>
+
+    <div class="field">
+      <strong>Fachfilter (optional):</strong> Komma-getrennte Liste von Fächern zum Filtern
+      <br><small>→ z.B. "Mathematik, Englisch, Informatik" - leer lassen um alle Fächer zu zeigen</small>
+    </div>
+
+    <h3>3. IHK Daten eintragen</h3>
+    <p>Im Tab "IHK" gibst du folgende Informationen ein:</p>
+
+    <div class="field">
+      <strong>Host:</strong> Nur der Domainname deiner IHK, z.B. <code>www.bildung-ihk-nordwestfalen.de</code>
+      <br><small style="color: var(--err);">⚠️ WICHTIG: KEINE URL mit https:// eingeben!</small>
+      <br><small>→ Gehe auf die IHK-Website deiner Region, kopiere die Domain aus der URL (z.B. www.bildung-ihk-nordwestfalen.de)</small>
+    </div>
+
+    <div class="field">
+      <strong>Benutzer:</strong> Dein IHK-Benutzername
+      <br><small>→ Das ist der Name, mit dem du dich auf der IHK-Plattform anmeldest</small>
+    </div>
+
+    <div class="field">
+      <strong>Passwort:</strong> Dein IHK-Passwort
+      <br><small>→ Das ist dein normales IHK-Login-Passwort</small>
+    </div>
+
+    <div class="field">
+      <strong>Ausbildungsabschnitt:</strong> Dein Ausbildungsabschnitt (z.B. "1" oder "1/3")
+      <br><small>→ Dies findest du auf der IHK-Plattform in deinem Profil</small>
+    </div>
+
+    <div class="field">
+      <strong>Ausbilder E-Mail:</strong> Die E-Mail deines Ausbilders
+      <br><small>→ Dies ist wichtig für die Einreichung deiner Berichte</small>
+    </div>
+
+    <h3>4. Scraper Zeitplan einstellen</h3>
+    <p>Im Tab "Scraper" kannst du einen automatischen Zeitplan setzen:</p>
+    <ul>
+      <li><strong>Wochentag:</strong> An welchem Wochentag sollen Daten abgerufen werden?</li>
+      <li><strong>Uhrzeit:</strong> Um wie viel Uhr sollen die Daten automatisch abgerufen werden?</li>
+    </ul>
+    <p><small>→ Setze "off", um die automatische Abfrage zu deaktivieren</small></p>
+  </section>
+
+  <!-- Buttons -->
+  <section>
+    <h2>Die Buttons erklärt</h2>
+
+    <div class="button-guide">
+      <div class="button-card">
+        <strong>← / →</strong>
+        <p>Navigiere zwischen Wochen. Der linke Button geht zur vorherigen Woche, der rechte zur nächsten.</p>
+      </div>
+
+      <div class="button-card">
+        <strong>Wochenauswahl</strong>
+        <p>Dropdown-Menu um schnell zu einer bestimmten Woche zu springen. Zeigt nur Wochen mit Daten.</p>
+      </div>
+
+      <div class="button-card">
+        <strong>Jetzt Abrufen</strong>
+        <p>Holt die Stundenplan-Daten dieser Woche von WebUntis. Wird automatisch deaktiviert für genehmigte Wochen.</p>
+      </div>
+
+      <div class="button-card">
+        <strong>Bei IHK einreichen</strong>
+        <p>Sendet die Wochendaten zur IHK-Plattform. Fülle zuerst die Textfelder aus (Betriebliche Tätigkeiten, etc.)</p>
+      </div>
+
+      <div class="button-card">
+        <strong>Text kopieren</strong>
+        <p>Kopiert die automatisch generierten Stundenplan-Daten in die Zwischenablage zum Bearbeiten.</p>
+      </div>
+
+      <div class="button-card">
+        <strong>⚙ Einstellungen</strong>
+        <p>Öffnet die Konfigurationsseite für WebUntis, IHK, Scraper und Kontoeinstellungen.</p>
+      </div>
+
+      <div class="button-card">
+        <strong>◊ Datenimport</strong>
+        <p>Öffnet die Seite zum Massenabruf von mehreren Wochen und zum Archivieren aller IHK-Einträge.</p>
+      </div>
+
+      <div class="button-card">
+        <strong>← Abmelden</strong>
+        <p>Meldet dich ab und bringt dich zurück zum Login-Bildschirm.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Datenimport -->
+  <section>
+    <h2>Datenimport (Massenabruf)</h2>
+
+    <p>
+      Die Datenimport-Funktion ermöglicht es dir, schnell mehrere Wochen auf einmal abzurufen und alte IHK-Einträge zu archivieren.
+    </p>
+
+    <h3>WebUntis Wochen abrufen</h3>
+    <p>
+      Gib einen Datumsbereich ein und die App ruft alle Wochen in diesem Zeitraum ab:
+    </p>
+    <ul>
+      <li><strong>Von (z.B. 2026-W10):</strong> Die erste Woche die abgerufen werden soll</li>
+      <li><strong>Bis (z.B. 2026-W20):</strong> Die letzte Woche die abgerufen werden soll</li>
+    </ul>
+    <p>
+      Nach dem Klick werden alle Wochen nacheinander abgerufen. Dies kann eine Weile dauern.
+      Du siehst am Ende, wie viele Wochen erfolgreich abgerufen wurden.
+    </p>
+
+    <div class="note">
+      <strong>Hinweis:</strong> Du kannst diese Funktion verwenden, um schnell Wochen aus der Vergangenheit nachzuholen
+      oder um eine vollständige Kopie deiner Daten zu erstellen.
+    </div>
+
+    <h3>IHK-Historie abrufen</h3>
+    <p>
+      Diese Funktion holt alle bisherigen Einträge von der IHK-Plattform ab und speichert sie lokal:
+    </p>
+    <ul>
+      <li>Alle bereits eingereichten Wochen werden heruntergeladen</li>
+      <li>Die Daten werden lokal gespeichert und nie wieder von der IHK abgerufen</li>
+      <li>Dies ist eine Einrichtungsfunktion – normalerweise brauchst du dies nur einmal</li>
+    </ul>
+
+    <div class="note">
+      <strong>Hinweis:</strong> Nach dem ersten Start kannst du die genehmigten Wochen lesen, ohne dass die App ständig
+      von der IHK neu laden muss.
+    </div>
+  </section>
+
+  <!-- Week states -->
+  <section>
+    <h2>Wochenstatus</h2>
+
+    <p>Jede Woche kann einen der folgenden Status haben:</p>
+
+    <div class="field">
+      <strong style="color: var(--ok);">genehmigt</strong> – Die Woche wurde von der IHK genehmigt und ist abgeschlossen.
+      <br><small>→ Du kannst diese Woche nicht mehr bearbeiten oder erneut einreichen</small>
+    </div>
+
+    <div class="field">
+      <strong style="color: var(--text-muted);">eingetragen</strong> – Die Woche wurde eingereicht und wartet auf Genehmigung.
+      <br><small>→ Du kannst diese Woche nicht mehr bearbeiten, aber siehst deine eingetragenen Daten</small>
+    </div>
+
+    <div class="field">
+      <strong style="color: var(--warn);">warten auf Genehmigung</strong> – Die Einreichung wird noch bearbeitet.
+      <br><small>→ Warte ab, bis die IHK diese Woche genehmigt oder ablehnt</small>
+    </div>
+
+    <div class="field">
+      <strong style="color: var(--err);">abgelehnt</strong> – Die IHK hat diese Woche abgelehnt und möchte Änderungen.
+      <br><small>→ Du kannst die Woche erneut einreichen, nachdem du die Fehler korrigiert hast</small>
+    </div>
+  </section>
+
+  <!-- Troubleshooting -->
+  <section>
+    <h2>Häufige Fragen</h2>
+
+    <h3>F: "Jetzt Abrufen" funktioniert nicht – WebUntis Fehler</h3>
+    <p>
+      <strong>A:</strong> Überprüfe deine WebUntis-Einstellungen:
+    </p>
+    <ul>
+      <li>Host, Schule, Benutzer und Passwort sind korrekt eingetragen?</li>
+      <li>Kannst du dich manuell auf WebUntis anmelden?</li>
+      <li>Nutzt du einen VPN? VPN-Probleme können den Zugriff blocken</li>
+    </ul>
+
+    <h3>F: "Bei IHK einreichen" funktioniert nicht</h3>
+    <p>
+      <strong>A:</strong> Überprüfe folgende Punkte:
+    </p>
+    <ul>
+      <li>Die Textfelder sind nicht leer gefüllt (mind. eines der Felder muss Text enthalten)</li>
+      <li>Deine IHK-Einstellungen sind korrekt (Host nur als Domain, nicht als URL mit https://)</li>
+      <li>Dein IHK-Benutzer und Passwort sind korrekt</li>
+      <li>Die Woche ist nicht bereits genehmigt</li>
+    </ul>
+
+    <h3>F: Wie sieht die IHK-Domain richtig aus?</h3>
+    <p>
+      <strong>A:</strong> Beispiele für korrekte IHK-Domains:
+    </p>
+    <ul>
+      <li>✓ <code>www.bildung-ihk-nordwestfalen.de</code></li>
+      <li>✓ <code>www.ihk-muenchen.de</code></li>
+      <li>✗ <code>https://www.bildung-ihk-nordwestfalen.de</code> (FALSCH – kein https://)</li>
+      <li>✗ <code>https://www.bildung-ihk-nordwestfalen.de/login</code> (FALSCH – keine Pfade)</li>
+    </ul>
+
+    <h3>F: Die App sieht im Dunkelmodus seltsam aus</h3>
+    <p>
+      <strong>A:</strong> Versuche einen Hard-Refresh deines Browsers:
+    </p>
+    <ul>
+      <li>Windows/Linux: <code>Ctrl + Shift + R</code></li>
+      <li>Mac: <code>Cmd + Shift + R</code></li>
+    </ul>
+
+    <h3>F: Warum werden meine Daten per Datei gespeichert?</h3>
+    <p>
+      <strong>A:</strong> Die aktuelle Version speichert Daten dateibasiert. Zukünftige Versionen werden auf eine Datenbank
+      migrieren, um bessere Sicherheit und Skalierbarkeit zu bieten. Deine Daten bleiben immer privat und sind pro Benutzer isoliert.
+    </p>
+  </section>
+
+  <!-- Support -->
+  <section>
+    <h2>Weitere Hilfe</h2>
+
+    <p>
+      Falls du weitere Fragen hast oder auf ein Problem stößt:
+    </p>
+    <ul>
+      <li>Überprüfe deine Einstellungen in den Einstellungen</li>
+      <li>Versuche einen Hard-Refresh des Browsers</li>
+      <li>Überprüfe deine Internet- und VPN-Verbindung</li>
+      <li>Stelle sicher, dass dein Benutzer und Passwort korrekt sind</li>
+    </ul>
+
+    <div class="note">
+      <strong>Datenschutz:</strong> Alle deine Daten (WebUntis-Credentials, IHK-Credentials, Stundenplan, Berichte)
+      werden verschlüsselt gespeichert und sind pro Benutzer isoliert. Andere Benutzer können deine Daten nicht sehen.
+    </div>
+  </section>
+</div>
+
+</body>
+</html>

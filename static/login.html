@@ -55,8 +55,20 @@
         }
 
         .logo {
-            font-size: 2.5rem;
             margin-bottom: 1rem;
+        }
+
+        .logo img {
+            width: 60px;
+            height: 60px;
+            object-fit: contain;
+            filter: invert(1);
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .logo img {
+                filter: none;
+            }
         }
 
         .header h1 {
@@ -182,7 +194,7 @@
 <body>
     <div class="login-wrapper">
         <div class="header">
-            <div class="logo">📋</div>
+            <div class="logo"><img src="/logo.svg" alt="BetterAutoBerichtsheft"></div>
             <h1>BetterAutoBerichtsheft</h1>
             <p>Your automated Berichtsheft companion</p>
         </div>

@@ -103,9 +103,6 @@ def scrape_week(week_id: str, settings: UserSettings | None = None) -> dict:
             except ScrapeError:
                 log.warning("getSchoolyears failed for %s", week_id)
 
-        if settings.SUBJECT_FILTER:
-            lessons = [l for l in lessons if l["subject"] in settings.SUBJECT_FILTER]
-
         for lesson in lessons:
             date = dt.date.fromisoformat(lesson["date"])
             lesson["content"] = client.teaching_content(date, lesson["start"], lesson["end"])

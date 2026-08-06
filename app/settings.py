@@ -19,13 +19,13 @@ class UserSettings:
     UNTIS_SCHOOL: str
     UNTIS_USER: str
     UNTIS_PASS: str
-    SUBJECT_FILTER: list[str]
     DATA_DIR: Path
     IHK_HOST: str
     IHK_USER: str
     IHK_PASS: str
     IHK_AUSBABSCHNITT: str
     IHK_AUSB_MAIL: str
+    IHK_USE_SETTINGS_FOR_ABSCHNITT: bool = True
     SCRAPE_DAY: str = "off"
     SCRAPE_TIME: str = "18:00"
 
@@ -46,13 +46,13 @@ class UserSettings:
             UNTIS_SCHOOL=c.UNTIS_SCHOOL,
             UNTIS_USER=c.UNTIS_USER,
             UNTIS_PASS=c.UNTIS_PASS,
-            SUBJECT_FILTER=list(c.SUBJECT_FILTER),
             DATA_DIR=c.DATA_DIR,
             IHK_HOST=c.IHK_HOST,
             IHK_USER=c.IHK_USER,
             IHK_PASS=c.IHK_PASS,
             IHK_AUSBABSCHNITT=c.IHK_AUSBABSCHNITT,
             IHK_AUSB_MAIL=c.IHK_AUSB_MAIL,
+            IHK_USE_SETTINGS_FOR_ABSCHNITT=True,
             SCRAPE_DAY=c.SCRAPE_DAY,
             SCRAPE_TIME=c.SCRAPE_TIME,
         )

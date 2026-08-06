@@ -40,7 +40,7 @@ class UntisClient:
             raise ScrapeError("UNTIS_USER / UNTIS_PASS not set")
         self.base = f"https://{self.cfg.UNTIS_HOST}"
         self.s = requests.Session()
-        self.s.headers["User-Agent"] = "berichtsheft/1.0"
+        self.s.headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         self.person_id = None
         self.token = None
 
@@ -49,7 +49,7 @@ class UntisClient:
             f"{self.base}/WebUntis/jsonrpc.do",
             params={"school": self.cfg.UNTIS_SCHOOL},
             json={"id": "bab", "jsonrpc": "2.0", "method": method, "params": params},
-            timeout=30,
+            timeout=60,
         )
         r.raise_for_status()
         data = r.json()
@@ -133,7 +133,7 @@ class UntisClient:
             f"{self.base}/WebUntis/api/rest/view/v2/calendar-entry/detail",
             params=params,
             headers={"Authorization": f"Bearer {self.token}"},
-            timeout=30,
+            timeout=60,
         )
         if not r.ok:
             log.warning("calendar-entry/detail %s for %s %s", r.status_code, date, start_hm)

@@ -343,16 +343,21 @@
     margin: 1.1rem 0 .35rem;
   }
   .ihk-form label:first-of-type { margin-top: 0; }
-  .ihk-form textarea {
+  .ihk-form textarea, .ihk-form input[type="text"], .ihk-form input[type="email"] {
     width: 100%;
-    min-height: 4.5rem;
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: .75rem;
     font: inherit;
     background: var(--bg);
     color: var(--text);
+  }
+  .ihk-form textarea {
+    min-height: 4.5rem;
     resize: vertical;
+  }
+  .ihk-form input[type="text"], .ihk-form input[type="email"] {
+    height: 2.5rem;
   }
   .placeholder { color: var(--text-muted); text-align: center; padding: 3rem 0; }
 
@@ -376,13 +381,17 @@
   </div>
 
   <nav class="sidebar-nav">
-    <a href="/settings.html" title="Einstellungen öffnen" class="nav-link">
-      <span class="nav-icon">⚙</span>
-      <span class="nav-text">Einstellungen</span>
+    <a href="/help.html" title="Hilfe" class="nav-link">
+      <img src="/help.svg" alt="Help" class="nav-icon nav-icon-img">
+      <span class="nav-text">Hilfe</span>
     </a>
     <a href="/bulkops.html" title="Datenimport" class="nav-link">
       <img src="/sync.svg" alt="Sync" class="nav-icon nav-icon-img">
       <span class="nav-text">Datenimport</span>
+    </a>
+    <a href="/settings.html" title="Einstellungen öffnen" class="nav-link">
+      <span class="nav-icon">⚙</span>
+      <span class="nav-text">Einstellungen</span>
     </a>
   </nav>
 
@@ -467,6 +476,7 @@ let ihkHistory = {};
 let ihkFieldsCache = {};
 let ihkFields = { ausbinhalt1: "", ausbinhalt2: "" };
 let weekText = "";
+let ihkUseSettingsForAbschnitt = true;
 const IHK_BADGE_LABELS = {
   "genehmigt": ["genehmigt", "genehmigt"],
   "in_bearbeitung": ["in Bearbeitung", "in-bearbeitung"],
@@ -627,6 +637,12 @@ function renderWeek(data, wid) {
           <textarea id="ihkField1" rows="4"></textarea>
           <label for="ihkField2">Unterweisungen, betrieblicher Unterricht, sonstige Schulungen</label>
           <textarea id="ihkField2" rows="4"></textarea>
+          ${!ihkUseSettingsForAbschnitt ? `
+            <label for="ihkAbschnitt">Ausbildungsabschnitt</label>
+            <input type="text" id="ihkAbschnitt" placeholder="z.B. 1">
+            <label for="ihkAusbMail">Ausbilder Mail</label>
+            <input type="email" id="ihkAusbMail" placeholder="ausbilder@example.com">
+          ` : ''}
           <label for="berufsschuleText">Berufsschule</label>
         ` : hist ? `
           <h2>IHK Eintrag</h2>
@@ -671,6 +687,16 @@ async function refreshIhkHistory() {
   ihkHistory = res.ok ? await res.json() : {};
 }
 
+async function loadUserSettings() {
+  try {
+    const res = await fetch("/api/me/settings");
+    const settings = await res.json();
+    ihkUseSettingsForAbschnitt = settings.ihk_use_settings_for_abschnitt !== false;
+  } catch (err) {
+    console.error("Failed to load user settings:", err);
+  }
+}
+
 async function init() {
   try {
     const res = await fetch("/api/weeks");
@@ -688,6 +714,7 @@ async function init() {
 
     await refreshIhkStatus();
     await refreshIhkHistory();
+    await loadUserSettings();
     loadWeek(selected);
   } catch (err) { setStatus("Fehler: " + err.message, "err"); }
 }
@@ -736,10 +763,24 @@ $("ihkBtn").onclick = async () => {
     const ausbinhalt1 = val1 ? val1 : null;
     const ausbinhalt2 = val2 ? val2 : null;
 
+    const payload = { week: selected, text, ausbinhalt1, ausbinhalt2 };
+
+    if (!ihkUseSettingsForAbschnitt) {
+      const abschnittField = $("ihkAbschnitt");
+      const ausbMailField = $("ihkAusbMail");
+      if (!abschnittField || !ausbMailField) {
+        setStatus("Fehler: Ausbildungsabschnitt und Ausbilder Mail erforderlich", "err");
+        btn.disabled = false;
+        return;
+      }
+      payload.ihk_abschnitt_override = abschnittField.value.trim();
+      payload.ihk_ausb_mail_override = ausbMailField.value.trim();
+    }
+
     const res = await fetch("/api/submit-ihk", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ week: selected, text, ausbinhalt1, ausbinhalt2 })
+      body: JSON.stringify(payload)
     });
 
     const body = await res.json();

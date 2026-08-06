@@ -14,7 +14,6 @@ UNTIS_HOST = os.environ.get("UNTIS_HOST", "le-bk-muenster.webuntis.com")
 UNTIS_SCHOOL = os.environ.get("UNTIS_SCHOOL", "le-bk-muenster")
 UNTIS_USER = os.environ.get("UNTIS_USER", "")
 UNTIS_PASS = os.environ.get("UNTIS_PASS", "")
-SUBJECT_FILTER = [s.strip() for s in os.environ.get("SUBJECT_FILTER", "").split(",") if s.strip()]
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 IHK_HOST = os.environ.get("IHK_HOST", "www.bildung-ihk-nordwestfalen.de")
 IHK_USER = os.environ.get("IHK_USER", "")
