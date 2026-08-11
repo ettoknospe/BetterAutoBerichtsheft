@@ -34,6 +34,10 @@ def _get_lock(user_id: int, kind: str) -> threading.Lock:
 # Absent/missing key means "nothing running" - the frontend treats a 404-ish
 # empty response the same way, so no separate "not running" sentinel needed.
 _bulk_scrape_progress = {}
+# User ids that have requested cancellation of an in-flight bulk scrape.
+# The scrape loop checks this between weeks and stops at the next boundary.
+_bulk_scrape_cancel = set()
+_bulk_scrape_cancel_lock = threading.Lock()
 
 
 def _iter_weeks(start: str, end: str):
@@ -562,8 +566,16 @@ def bulkops_scrape_weeks(req: BulkScrapeRequest, user: auth.AuthedUser = Depends
         raise HTTPException(status_code=400, detail=f"range too large (max {MAX_BULK_WEEKS} weeks)")
     total = len(weeks_list)
     weeks_scraped = 0
+    cancelled = False
+    # Drop any stale cancel request from a previous run before starting.
+    with _bulk_scrape_cancel_lock:
+        _bulk_scrape_cancel.discard(user.id)
     try:
         for i, wk in enumerate(weeks_list, start=1):
+            with _bulk_scrape_cancel_lock:
+                if user.id in _bulk_scrape_cancel:
+                    cancelled = True
+                    break
             _bulk_scrape_progress[user.id] = {"current": i, "total": total, "week": wk}
             try:
                 lock = _get_lock(user.id, "scrape")
@@ -576,14 +588,25 @@ def bulkops_scrape_weeks(req: BulkScrapeRequest, user: auth.AuthedUser = Depends
                     lock.release()
             except Exception as e:
                 log.warning("failed to scrape %s: %s", wk, e)
-        return {"weeks_scraped": weeks_scraped}
+        return {"weeks_scraped": weeks_scraped, "total": total, "cancelled": cancelled}
     finally:
         _bulk_scrape_progress.pop(user.id, None)
+        with _bulk_scrape_cancel_lock:
+            _bulk_scrape_cancel.discard(user.id)
 
 @app.get("/api/bulkops/scrape-progress")
 def bulkops_scrape_progress(user: auth.AuthedUser = Depends(auth.require_user)):
     """Polled by the Datenimport page while a bulk scrape is in flight."""
     return _bulk_scrape_progress.get(user.id) or {"current": 0, "total": 0, "week": None}
+
+@app.post("/api/bulkops/scrape-cancel")
+def bulkops_scrape_cancel(user: auth.AuthedUser = Depends(auth.require_user)):
+    """Ask the user's in-flight bulk scrape to stop. The running loop checks
+    this flag between weeks and stops at the next boundary (the current week
+    finishes first). No-op if nothing is running."""
+    with _bulk_scrape_cancel_lock:
+        _bulk_scrape_cancel.add(user.id)
+    return {"ok": True}
 
 @app.post("/api/bulkops/backfill-ihk")
 def bulkops_backfill_ihk(req: BulkBackfillIhkRequest, user: auth.AuthedUser = Depends(auth.require_user)):

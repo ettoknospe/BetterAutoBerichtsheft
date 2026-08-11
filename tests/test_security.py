@@ -102,3 +102,26 @@ def test_security_headers_present(unauth_client):
 def test_api_docs_disabled_by_default(unauth_client):
     assert unauth_client.get("/openapi.json").status_code == 404
     assert unauth_client.get("/docs").status_code == 404
+
+
+# ---- Bulk-scrape abort (stop button) ----
+
+def test_bulk_scrape_can_be_cancelled(new_user, monkeypatch):
+    """Cancelling mid-run stops the loop at the next week boundary."""
+    calls = []
+    def fake_scrape(wk, **k):
+        calls.append(wk)
+        # request cancellation after the first week is scraped
+        with main._bulk_scrape_cancel_lock:
+            main._bulk_scrape_cancel.add(new_user.user_id)
+    monkeypatch.setattr(main.scraper, "scrape_week", fake_scrape)
+    r = new_user.client.post("/api/bulkops/scrape-weeks",
+                             json={"startWeek": "2025-W01", "endWeek": "2025-W10"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["cancelled"] is True
+    assert len(calls) == 1  # stopped after the first, not all 10
+
+
+def test_scrape_cancel_requires_auth(unauth_client):
+    assert unauth_client.post("/api/bulkops/scrape-cancel").status_code == 401
