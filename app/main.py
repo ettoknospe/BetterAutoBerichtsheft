@@ -1,4 +1,5 @@
 import datetime as dt
+import itertools
 import logging
 import re
 import threading
@@ -12,6 +13,7 @@ from pydantic import BaseModel
 from . import config, db, auth, scraper, ihk_submitter, untis_client, ihk_client, storage
 from .settings import UserSettings
 from .ihk_client import IhkError
+from .netcheck import HostNotAllowed
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("app")
@@ -51,9 +53,70 @@ def _iter_weeks(start: str, end: str):
 # Constants
 WEEK_RE = re.compile(r"^\d{4}-W\d{2}$")
 DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+# Cap a single bulk-scrape request. WEEK_RE alone allows "9999-W99", which
+# combined with _iter_weeks' string-compare loop is millions of iterations —
+# an authenticated DoS. Ten years of weeks is far past any real apprenticeship.
+MAX_BULK_WEEKS = 520
 
-# Initialize app
-app = FastAPI(title="Berichtsheft")
+# Initialize app. API docs are off unless ENABLE_DOCS is set, so the schema
+# isn't served to unauthenticated visitors in production.
+app = FastAPI(
+    title="Berichtsheft",
+    docs_url="/docs" if config.ENABLE_DOCS else None,
+    redoc_url="/redoc" if config.ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if config.ENABLE_DOCS else None,
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """Add defensive response headers (clickjacking, MIME-sniffing, referrer
+    leakage, a conservative CSP for the vanilla-JS SPA)."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+    )
+    return response
+
+
+# ===== Login rate limiting =====
+# In-memory sliding-window lockout per (client-ip, username). Good enough for a
+# single-process personal-scale app; resets on restart. Not distributed.
+_LOGIN_MAX_ATTEMPTS = 8
+_LOGIN_WINDOW_SECONDS = 300
+_login_attempts = {}
+_login_attempts_lock = threading.Lock()
+
+
+def _login_rate_key(request: Request, username: str) -> tuple:
+    client = request.client.host if request.client else "unknown"
+    return (client, username)
+
+
+def _login_is_locked(key: tuple) -> bool:
+    now = time.monotonic()
+    with _login_attempts_lock:
+        hits = [t for t in _login_attempts.get(key, []) if now - t < _LOGIN_WINDOW_SECONDS]
+        _login_attempts[key] = hits
+        return len(hits) >= _LOGIN_MAX_ATTEMPTS
+
+
+def _login_record_failure(key: tuple) -> None:
+    now = time.monotonic()
+    with _login_attempts_lock:
+        hits = [t for t in _login_attempts.get(key, []) if now - t < _LOGIN_WINDOW_SECONDS]
+        hits.append(now)
+        _login_attempts[key] = hits
+
+
+def _login_reset(key: tuple) -> None:
+    with _login_attempts_lock:
+        _login_attempts.pop(key, None)
 
 # ===== Request Models =====
 
@@ -106,14 +169,42 @@ class SettingsUpdateRequest(BaseModel):
 # ===== Auth Endpoints =====
 
 @app.post("/api/auth/login")
-async def login(req: LoginRequest, response: Response):
+async def login(req: LoginRequest, request: Request, response: Response):
     """Authenticate user, set session cookie."""
+    rate_key = _login_rate_key(request, req.username)
+    if _login_is_locked(rate_key):
+        raise HTTPException(status_code=429, detail="Too many attempts, try again later")
+
     user = db.get_user_by_username(req.username)
-    if not user or not auth.verify_password(req.password, user["password_hash"]):
+    if not user:
+        # Spend the same PBKDF2 time as a real verify so a missing username
+        # can't be told apart by response time.
+        auth.dummy_verify(req.password)
+        _login_record_failure(rate_key)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+    if not auth.verify_password(req.password, user["password_hash"]):
+        _login_record_failure(rate_key)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    # Transparently upgrade an old (lower-iteration) hash now that we have the
+    # plaintext and know it's correct.
+    if auth.needs_rehash(user["password_hash"]):
+        try:
+            conn = db.get_connection()
+            try:
+                conn.execute("UPDATE users SET password_hash = ? WHERE id = ?",
+                             (auth.hash_password(req.password), user["id"]))
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            log.warning("password rehash failed for user %s (non-fatal)", user["id"])
+
+    _login_reset(rate_key)
     session_id = db.create_session(user["id"])
-    response.set_cookie("session", session_id, httponly=True, samesite="lax", max_age=30*24*3600)
+    response.set_cookie("session", session_id, httponly=True, samesite="lax",
+                        secure=config.SESSION_COOKIE_SECURE, max_age=30*24*3600)
     return {"ok": True, "username": user["username"], "is_admin": bool(user["is_admin"])}
 
 @app.post("/api/auth/logout")
@@ -139,10 +230,16 @@ async def create_admin_user(req: CreateUserRequest, admin: auth.AuthedUser = Dep
         raise HTTPException(status_code=409, detail="Username already taken")
 
     try:
+        auth.validate_password_strength(req.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
         user_id = db.create_user(req.username, auth.hash_password(req.password), req.is_admin)
         return {"ok": True, "id": user_id, "username": req.username}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        log.exception("create_user failed")
+        raise HTTPException(status_code=500, detail="could not create user")
 
 @app.get("/api/admin/users")
 async def list_admin_users(admin: auth.AuthedUser = Depends(auth.require_admin)):
@@ -202,8 +299,9 @@ async def update_settings(req: SettingsUpdateRequest, user: auth.AuthedUser = De
     try:
         db.update_user_settings(user.id, **updates)
         return {"ok": True}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        log.exception("update_settings failed")
+        raise HTTPException(status_code=500, detail="could not save settings")
 
 @app.put("/api/me/password")
 async def change_password(req: PasswordChangeRequest, user: auth.AuthedUser = Depends(auth.require_user)):
@@ -212,14 +310,22 @@ async def change_password(req: PasswordChangeRequest, user: auth.AuthedUser = De
     if not auth.verify_password(req.current_password, user_row["password_hash"]):
         raise HTTPException(status_code=401, detail="Current password incorrect")
 
+    try:
+        auth.validate_password_strength(req.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     new_hash = auth.hash_password(req.new_password)
     conn = db.get_connection()
     try:
         conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (new_hash, user.id))
         conn.commit()
-        return {"ok": True}
     finally:
         conn.close()
+    # Invalidate every session (including this one) so a hijacked session can't
+    # survive the password change. The SPA's authFetch bounces 401 -> login.
+    db.delete_sessions_for_user(user.id)
+    return {"ok": True}
 
 @app.post("/api/test/untis")
 async def test_untis_connection(req: SettingsUpdateRequest, user: auth.AuthedUser = Depends(auth.require_user)):
@@ -253,10 +359,15 @@ async def test_untis_connection(req: SettingsUpdateRequest, user: auth.AuthedUse
         client = untis_client.UntisClient(test_settings)
         client.login()
         return {"ok": True, "message": "WebUntis connection successful"}
+    except HostNotAllowed as e:
+        raise HTTPException(status_code=400, detail=f"host not allowed: {e}")
     except untis_client.ScrapeError as e:
         raise HTTPException(status_code=502, detail=f"WebUntis error: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Test failed: {e}")
+    except Exception:
+        # Don't echo the raw exception: low-level connection errors (refused vs
+        # timeout) are an SSRF port-scan oracle.
+        log.exception("untis connection test failed")
+        raise HTTPException(status_code=500, detail="connection test failed")
 
 @app.post("/api/test/ihk")
 async def test_ihk_connection(req: SettingsUpdateRequest, user: auth.AuthedUser = Depends(auth.require_user)):
@@ -290,10 +401,14 @@ async def test_ihk_connection(req: SettingsUpdateRequest, user: auth.AuthedUser 
         client = ihk_client.IhkClient(test_settings)
         client.login()
         return {"ok": True, "message": "IHK connection successful"}
+    except HostNotAllowed as e:
+        raise HTTPException(status_code=400, detail=f"host not allowed: {e}")
     except ihk_client.IhkError as e:
         raise HTTPException(status_code=502, detail=f"IHK error: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Test failed: {e}")
+    except Exception:
+        # Don't echo the raw exception (SSRF oracle); log full detail instead.
+        log.exception("ihk connection test failed")
+        raise HTTPException(status_code=500, detail="connection test failed")
 
 # ===== Scraping Endpoints (per-user) =====
 
@@ -353,9 +468,9 @@ def scrape(req: ScrapeRequest, user: auth.AuthedUser = Depends(auth.require_user
         return result
     except scraper.ScrapeError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("scrape failed")
-        raise HTTPException(status_code=500, detail=f"scrape failed: {e}")
+        raise HTTPException(status_code=500, detail="scrape failed")
     finally:
         lock.release()
 
@@ -416,9 +531,9 @@ def submit_ihk(req: SubmitIhkRequest, user: auth.AuthedUser = Depends(auth.requi
         return {"ok": True}
     except IhkError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("IHK submit failed")
-        raise HTTPException(status_code=500, detail=f"IHK submit failed: {e}")
+        raise HTTPException(status_code=500, detail="IHK submit failed")
     finally:
         lock.release()
 
@@ -431,12 +546,20 @@ def bulkops_scrape_weeks(req: BulkScrapeRequest, user: auth.AuthedUser = Depends
         raise HTTPException(status_code=400, detail="week must be YYYY-Www format")
     if req.startWeek > req.endWeek:
         raise HTTPException(status_code=400, detail="startWeek must be <= endWeek")
+    # Never scrape past the current week (nothing there yet) and bound the span
+    # so one request can't spin _iter_weeks for a huge number of iterations.
+    current_week = scraper.current_week_id()
+    end_week = min(req.endWeek, current_week)
+    if req.startWeek > end_week:
+        raise HTTPException(status_code=400, detail="startWeek is in the future")
 
     user_row = db.get_user_by_id(user.id)
     settings_row = db.get_user_settings(user.id)
     settings = db._row_to_settings(settings_row, user_row)
 
-    weeks_list = list(_iter_weeks(req.startWeek, req.endWeek))
+    weeks_list = list(itertools.islice(_iter_weeks(req.startWeek, end_week), MAX_BULK_WEEKS + 1))
+    if len(weeks_list) > MAX_BULK_WEEKS:
+        raise HTTPException(status_code=400, detail=f"range too large (max {MAX_BULK_WEEKS} weeks)")
     total = len(weeks_list)
     weeks_scraped = 0
     try:
@@ -469,6 +592,11 @@ def bulkops_backfill_ihk(req: BulkBackfillIhkRequest, user: auth.AuthedUser = De
     settings_row = db.get_user_settings(user.id)
     settings = db._row_to_settings(settings_row, user_row)
 
+    # Same IHK portal account as submit — take the submit lock so a backfill
+    # and a submit can't hit the portal concurrently for one user.
+    lock = _get_lock(user.id, "submit")
+    if not lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="another IHK operation is running")
     try:
         client = ihk_client.IhkClient(settings=settings)
         client.login()
@@ -498,9 +626,11 @@ def bulkops_backfill_ihk(req: BulkBackfillIhkRequest, user: auth.AuthedUser = De
         return {"entries_scraped": len(history)}
     except IhkError as e:
         raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
+    except Exception:
         log.exception("backfill failed")
-        raise HTTPException(status_code=500, detail=f"backfill failed: {e}")
+        raise HTTPException(status_code=500, detail="backfill failed")
+    finally:
+        lock.release()
 
 # ===== Scheduler (multi-user) =====
 

@@ -4,6 +4,7 @@ Connection pragmas, schema definition, migration runner, and bootstrap logic
 for first-boot multi-user migration (single-tenant .env → multi-user DB).
 """
 
+import os
 import sqlite3
 import json
 import logging
@@ -16,6 +17,15 @@ from .settings import UserSettings
 log = logging.getLogger("app")
 
 DB_PATH = config.DATA_DIR / "app.db"
+
+# Columns update_user_settings() is allowed to write (after untis_pass/ihk_pass
+# have been turned into their *_enc forms). Guards the f-string SET clause.
+_SETTINGS_COLUMNS = {
+    "untis_host", "untis_school", "untis_user", "untis_pass_enc",
+    "scrape_day", "scrape_time",
+    "ihk_host", "ihk_user", "ihk_pass_enc", "ihk_ausbabschnitt", "ihk_ausb_mail",
+    "ihk_use_settings_for_abschnitt", "start_date", "updated_at",
+}
 
 # Schema migrations: (version, SQL statement)
 MIGRATIONS = [
@@ -115,6 +125,13 @@ def get_connection():
     """Get a DB connection with proper pragmas set."""
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False)
+    # The DB holds wrapped per-user DEKs and password hashes; keep it owner-only
+    # so a world-readable file can't hand an attacker the encrypted material.
+    for _f in (DB_PATH, Path(f"{DB_PATH}-wal"), Path(f"{DB_PATH}-shm")):
+        try:
+            os.chmod(_f, 0o600)
+        except OSError:
+            pass  # sidecar may not exist yet, or bind-mount owns perms
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")
@@ -344,6 +361,13 @@ def update_user_settings(user_id: int, **kwargs) -> UserSettings:
         updates.update(kwargs)
         updates["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
+        # Whitelist column names before they go into the f-string SET clause.
+        # Callers only ever pass literal field names today, so this is defence
+        # in depth against a future caller forwarding attacker-controlled keys.
+        unknown = set(updates) - _SETTINGS_COLUMNS
+        if unknown:
+            raise ValueError(f"unknown user_settings columns: {sorted(unknown)}")
+
         # Build SET clause
         set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
         values = list(updates.values()) + [user_id]
@@ -437,6 +461,17 @@ def delete_session(session_id: str):
     conn = get_connection()
     try:
         conn.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_sessions_for_user(user_id: int):
+    """Delete every session for a user. Called on password change so a hijacked
+    session can't outlive the password it was created under."""
+    conn = get_connection()
+    try:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         conn.commit()
     finally:
         conn.close()

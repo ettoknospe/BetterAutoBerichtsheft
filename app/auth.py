@@ -12,8 +12,18 @@ from . import db
 
 log = logging.getLogger("app")
 
-# PBKDF2-SHA256 with 260k iterations (OWASP 2023 guidance)
-PBKDF2_ITERATIONS = 260000
+# PBKDF2-SHA256 with 600k iterations (OWASP 2023 guidance). The hash format
+# is self-describing (embeds its own iteration count), so old 260k hashes still
+# verify and are transparently upgraded on the next successful login.
+PBKDF2_ITERATIONS = 600000
+
+# Minimum password length enforced on create + change.
+MIN_PASSWORD_LENGTH = 8
+
+# A fixed hash of a random throwaway password, used to spend the same PBKDF2
+# time on a login for a nonexistent user as for a real one — closes the
+# username-enumeration timing oracle.
+_DUMMY_HASH = None
 
 
 def hash_password(password: str) -> str:
@@ -38,6 +48,33 @@ def verify_password(password: str, password_hash: str) -> bool:
     except Exception as e:
         log.warning("Password verification error: %s", e)
         return False
+
+
+def dummy_verify(password: str) -> None:
+    """Spend one PBKDF2 verification's worth of time without a real user, so a
+    login attempt for a nonexistent username takes as long as a real one."""
+    global _DUMMY_HASH
+    if _DUMMY_HASH is None:
+        _DUMMY_HASH = hash_password(secrets.token_hex(16))
+    verify_password(password, _DUMMY_HASH)
+
+
+def needs_rehash(password_hash: str) -> bool:
+    """True if the stored hash uses fewer iterations than the current target
+    (i.e. was made before an iteration bump) and should be re-hashed."""
+    try:
+        parts = password_hash.split("$")
+        if len(parts) != 4 or parts[0] != "pbkdf2_sha256":
+            return True
+        return int(parts[1]) < PBKDF2_ITERATIONS
+    except Exception:
+        return True
+
+
+def validate_password_strength(password: str) -> None:
+    """Raise ValueError if the password is too weak. Enforced on create/change."""
+    if password is None or len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"password must be at least {MIN_PASSWORD_LENGTH} characters")
 
 
 @dataclass

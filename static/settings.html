@@ -479,6 +479,10 @@
     </div>
 
     <script>
+        // HTML-escape untrusted text before it goes into innerHTML. WebUntis lesson
+        // content and admin usernames are attacker-influenceable, so escape them.
+        const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
         let currentUser = null;
         let currentSettings = null;
 
@@ -534,7 +538,7 @@
                 tbody.innerHTML = users.map(u => `
                     <tr>
                         <td>${u.id}</td>
-                        <td>${u.username}</td>
+                        <td>${esc(u.username)}</td>
                         <td>${u.is_admin ? 'Admin' : 'Benutzer'}</td>
                         <td>${new Date(u.created_at).toLocaleDateString()}</td>
                     </tr>

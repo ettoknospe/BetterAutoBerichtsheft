@@ -17,6 +17,7 @@ import logging
 import requests
 
 from . import config
+from .netcheck import validate_external_host
 from .settings import UserSettings
 from .storage import _dump_debug
 
@@ -38,8 +39,14 @@ class UntisClient:
         self.cfg = settings or UserSettings.from_config()
         if not self.cfg.UNTIS_USER or not self.cfg.UNTIS_PASS:
             raise ScrapeError("UNTIS_USER / UNTIS_PASS not set")
+        # SSRF guard: the host comes from user settings, so make sure it points
+        # at a public server before we ever connect to it.
+        validate_external_host(self.cfg.UNTIS_HOST)
         self.base = f"https://{self.cfg.UNTIS_HOST}"
         self.s = requests.Session()
+        # Never follow redirects: a redirect could bounce a validated public
+        # host cross-scheme/host to an internal target the guard didn't see.
+        self.s.max_redirects = 0
         self.s.headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
         self.person_id = None
         self.token = None

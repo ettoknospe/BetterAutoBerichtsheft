@@ -31,3 +31,12 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 # Raw WebUntis/IHK response dumps bypass per-user storage entirely (plaintext,
 # unencrypted) - dev-only, must stay off in production.
 DEBUG_DUMPS = os.environ.get("DEBUG_DUMPS", "").lower() in ("1", "true", "yes")
+
+# Set the `Secure` flag on the session cookie. Default off because the app is
+# also reachable directly over plain HTTP on the LAN (0.0.0.0:8001); set to
+# true when the app is only reached through the TLS-terminating reverse proxy.
+SESSION_COOKIE_SECURE = os.environ.get("SESSION_COOKIE_SECURE", "").lower() in ("1", "true", "yes")
+
+# Expose the interactive API docs (/docs, /redoc, /openapi.json). Off by
+# default so the schema isn't handed to unauthenticated visitors in production.
+ENABLE_DOCS = os.environ.get("ENABLE_DOCS", "").lower() in ("1", "true", "yes")
